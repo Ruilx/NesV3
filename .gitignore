@@ -1,0 +1,154 @@
+#!/usr/bin/false
+# This file is supported to ignore files which files are really want to ignored
+# So, just ignore them
+# -----------------------------------------------------------------------------
+
+# Backup, log, and temp files
+*.bak
+*.log
+*.old
+*~
+
+# Vim temporary files
+*.swp
+*.swo
+*.swn
+
+# Emacs lock files (e.g., flc)
+*.flc
+# Editor session/history
+.netrwhist
+tags
+
+# Notepad++ temporary
+*.tmp
+
+# Sublime Text session/project files
+*.sublime-workspace
+*.sublime-project
+
+# Operating system files
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# macOS application bundles
+*.app/
+# macOS disk images
+*.dmg
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux core dumps (files named "core")
+core
+!core/
+
+# KDE folder metadata (often created in Linux)
+.directory
+
+
+# IDE and editor directories / configs
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Visual Studio generated files
+*.idb
+*.ilk
+*.pdb
+*.suo
+*.ncb
+*.sdf
+*.opensdf
+*.vcproj
+*.vcproj.*.user
+.vs/
+
+# Qt Creator
+.qmake.cache
+.qmake.stash
+.qtc_clangd/
+*.pro.user
+*.autosave
+
+# CLion (IDE settings)
+.idea/
+
+# Build systems and compilers
+# CMake
+CMakeFiles/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+CMakeLists.txt.user
+cmake-build-debug/
+cmake-build-release/
+cmake-build-*/
+# Autotools
+config.status
+
+# MinGW build outputs
+*.Debug
+*.Release
+debug/
+release/
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+*.pbxproj
+*.pbxuser
+*.pch
+*.xcuserstate
+*.xccheckout
+*.xcscheme
+
+# Static libraries (Linux)
+*.a
+
+# C++ precompiled header/temp files
+*_pch.h.cpp
+*_resource.rc
+
+# Qt / C++ auto-generated files
+# MOC, UI, and resource-generated sources
+*.moc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+*.qm
+*.prl
+
+
+# Python bytecode and cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+
+# Executables and libraries
+*.exe
+*.out
+*.app
+*.dll
+*.so
+*.dylib
+
+# Project directories to ignore
+backup/
+include/
+lib/
+
+# Miscellaneous files
+*.ppt
+*.pptx
+
+# build directories
+build/
+dist/
+*.egg-info/
+*.egg/
