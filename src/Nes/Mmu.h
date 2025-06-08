@@ -23,12 +23,13 @@
 #define PpuBankSize (12)
 
 class Mmu {
+
+public:
     static Mmu &instance() {
         static Mmu instance;
         return instance;
     }
 
-public:
     // memory type
     enum BankType {
         // for PROM (CPU)
@@ -68,10 +69,10 @@ public:
     } PpuBank;
 
 protected:
-    CpuBank cpuBank[CpuBankSize];
-    PpuBank ppuBank[PpuBankSize];
+    CpuBank cpuBank[CpuBankSize]{};
+    PpuBank ppuBank[PpuBankSize]{};
 
-    bool cRamUsed[16]; // state save
+    bool cRamUsed[16] = {false}; // state save
 
     Ram *iRam = new Ram(NesInternalRamSize);    // Nes internal ram
     Ram *wRam = new Ram(NesWorkRamSize);        // Work ram
@@ -131,6 +132,8 @@ protected:
     }
 
 public:
+
+
     void setPRomBank(quint8 page, Ram *bank, BankType type);
 
     void setPRom8kBank(quint8 page, quint16 bankIndex);
@@ -169,6 +172,49 @@ public:
     void setVRamMirror(VRamMirror type);
 
     void setVRamMirror(quint16 bankIndex0, quint16 bankIndex1, quint16 bankIndex2, quint16 bankIndex3);
+
+public:
+    [[nodiscard]] inline CpuBank getCpuBank(quint16 bankIndex) const {
+        if (bankIndex >= CpuBankSize) {
+            throw ValueError(QString::asprintf("Invalid bank index: %d", bankIndex));
+        }
+        return this->cpuBank[bankIndex];
+    }
+
+    [[nodiscard]] inline PpuBank getPpuBank(quint16 bankIndex) const {
+        if (bankIndex >= PpuBankSize) {
+            throw ValueError(QString::asprintf("Invalid bank index: %d", bankIndex));
+        }
+        return this->ppuBank[bankIndex];
+    }
+
+    [[nodiscard]] inline Ram *getIRam() const {
+        return this->iRam;
+    }
+
+    [[nodiscard]] inline Ram *getWRam() const {
+        return this->wRam;
+    }
+
+    [[nodiscard]] inline Ram *getDRam() const {
+        return this->dRam;
+    }
+
+    [[nodiscard]] inline Ram *getXRam() const {
+        return this->xRam;
+    }
+
+    [[nodiscard]] inline Ram *getERam() const {
+        return this->eRam;
+    }
+
+    [[nodiscard]] inline Ram *getCRam() const {
+        return this->cRam;
+    }
+
+    [[nodiscard]] inline Ram *getVRam() const {
+        return this->vRam;
+    }
 };
 
 #ifndef mmu
