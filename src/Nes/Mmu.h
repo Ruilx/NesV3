@@ -23,8 +23,12 @@
 #define PpuBankSize (12)
 
 class Mmu {
-    static Mmu *_instance;
+    static Mmu &instance() {
+        static Mmu instance;
+        return instance;
+    }
 
+public:
     // memory type
     enum BankType {
         // for PROM (CPU)
@@ -38,9 +42,19 @@ class Mmu {
         BankTypeVRam = 0x80,
     };
 
+    // mirror type
+    enum VRamMirror {
+        VRamHMirror = 0x00, // horizontal
+        VRamVMirror = 0x01, // vertical
+        VRamMirror4 = 0x02, // all screen
+        VRamMirror4L = 0x03, // PA10 L fixed mirror of $2000-$23FF
+        VRamMirror4H = 0x04, // PA10 H fixed mirror of $2400-$27FF
+    };
+
     // CPU memory bank
     typedef struct CpuBank_t {
-        Ram *bank;
+        Ram *bank;     // Ram对象
+        quint32 base;      // 偏移量
         BankType type;
         quint8 page;
     } CpuBank;
@@ -48,14 +62,16 @@ class Mmu {
     // PPU memory bank
     typedef struct PpuBank_t {
         Ram *bank;
+        quint32 base;
         BankType type;
         quint8 page;
     } PpuBank;
 
+protected:
     CpuBank cpuBank[CpuBankSize];
     PpuBank ppuBank[PpuBankSize];
 
-    quint8 cRamUsed[16]; // state save
+    bool cRamUsed[16]; // state save
 
     Ram *iRam = new Ram(NesInternalRamSize);    // Nes internal ram
     Ram *wRam = new Ram(NesWorkRamSize);        // Work ram
@@ -75,10 +91,12 @@ class Mmu {
     quint8 frameIrq = 0xC0;
 
     // ROM data pointer
-    quint8 *pRom = nullptr;
-    quint8 *vRom = nullptr;
+    Ram *pRom = nullptr;
+    Ram *vRom = nullptr;
 
     // ROM bank size
+    // assign 1 to avoid division by zero
+    // TODO: get the actual size from the ROM file
     size_t pRom8kSize = 1;
     size_t pRom16kSize = 1;
     size_t pRom32kSize = 1;
@@ -87,30 +105,72 @@ class Mmu {
     size_t vRom4kSize = 1;
     size_t vRom8kSize = 1;
 
-    void init_ram(){
+    void init_ram() {
         // default bank setting
-        for(CpuBank &i : cpuBank){
+        for (CpuBank &i: cpuBank) {
             i.bank = nullptr;
+            i.base = 0;
             i.type = BankTypeRom;
             i.page = 0;
         }
 
         // internal RAM / WRAM
+        this->setPRomBank(0, this->iRam, BankTypeRam);
+        this->setPRomBank(3, this->wRam, BankTypeRam);
+        // dummy
+        this->setPRomBank(1, this->xRam, BankTypeRom);
+        this->setPRomBank(2, this->xRam, BankTypeRom);
 
+        for (quint8 i = 0; i < 8; i++) {
+            this->cRamUsed[i] = false;
+        }
+    }
+
+    explicit Mmu() {
+        this->init_ram();
     }
 
 public:
-    explicit Mmu(){
+    void setPRomBank(quint8 page, Ram *bank, BankType type);
 
-    }
+    void setPRom8kBank(quint8 page, quint16 bankIndex);
 
-    void setPRomBank(quint8 page, Ram *bank, BankType type){
-        if(page >= CpuBankSize){
-            throw ValueError("Invalid page number");
-        }
-        this->cpuBank[page].bank = bank;
-        this->cpuBank[page].type = type;
-        this->cpuBank[page].page = 0;
-    }
+    void setPRom16kBank(quint8 page, quint16 bankIndex);
 
+    void setPRom32kBank(quint16 bankIndex);
+
+    void setPRom32kBank(quint16 bankIndex0, quint16 bankIndex1, quint16 bankIndex2, quint16 bankIndex3);
+
+    void setVRomBank(quint8 page, Ram *ram, BankType type);
+
+    void setVRom1kBank(quint8 page, quint16 bankIndex);
+
+    void setVRom2kBank(quint8 page, quint16 bankIndex);
+
+    void setVRom4kBank(quint8 page, quint16 bankIndex);
+
+    void setVRom8kBank(quint16 bankIndex);
+
+    void setVRom8kBank(quint16 bankIndex0, quint16 bankIndex1, quint16 bankIndex2, quint16 bankIndex3, quint16 bankIndex4,
+                       quint16 bankIndex5, quint16 bankIndex6, quint16 bankIndex7);
+
+    void setCRam1kBank(quint8 page, quint16 bankIndex);
+
+    void setCRam2kBank(quint8 page, quint16 bankIndex);
+
+    void setCRam4kBank(quint8 page, quint16 bankIndex);
+
+    void setCRam8kBank(quint16 bankIndex);
+
+    void setVRam1kBank(quint8 page, quint16 bankIndex);
+
+    void setVRamBank(quint16 bankIndex0, quint16 bankIndex1, quint16 bankIndex2, quint16 bankIndex3);
+
+    void setVRamMirror(VRamMirror type);
+
+    void setVRamMirror(quint16 bankIndex0, quint16 bankIndex1, quint16 bankIndex2, quint16 bankIndex3);
 };
+
+#ifndef mmu
+#   define mmu (Mmu::instance())
+#endif

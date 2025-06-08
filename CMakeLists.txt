@@ -19,10 +19,18 @@ set(PROJECT_SOURCES
 		src/MainWindow.cpp
 		src/MainWindow.h
 		${TS_FILES}
-		src/Excption/OutOfRangeException.cpp
-		src/Excption/OutOfRangeException.h
+        src/Excption/OutOfRangeError.cpp
+        src/Excption/OutOfRangeError.h
 		src/Excption/ValueError.cpp
 		src/Excption/ValueError.h
+		src/Excption/BaseError.cpp
+		src/Excption/BaseError.h
+		src/Excption/FileError.cpp
+		src/Excption/FileError.h
+		src/Excption/IOError.cpp
+		src/Excption/IOError.h
+		src/Excption/RuntimeError.cpp
+		src/Excption/RuntimeError.h
 )
 
 # 添加Nes子目录

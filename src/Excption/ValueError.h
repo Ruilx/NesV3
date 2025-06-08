@@ -1,15 +1,11 @@
 #pragma once
 
-#include <QException>
+#include "BaseError.h"
 
-class ValueError : public QException{
-
-    QString msg;
+class ValueError : public BaseError{
 public:
-    explicit ValueError(const QString &msg){
-        this->msg = msg;
-    }
+    explicit ValueError(const QString &msg): BaseError(msg){}
 
-    ~ValueError(){}
+    ValueError() = default;
 };
 

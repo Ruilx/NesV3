@@ -84,8 +84,6 @@ CMakeCache.txt
 Makefile
 cmake_install.cmake
 CMakeLists.txt.user
-cmake-build-debug/
-cmake-build-release/
 cmake-build-*/
 # Autotools
 config.status
