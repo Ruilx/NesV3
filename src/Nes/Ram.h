@@ -46,4 +46,19 @@ public:
     quint8 &operator[](int addr);
 
     const quint8 &operator[](int addr) const;
+
+    ~Ram();
+};
+
+class RamIterator {
+    Ram *ram = nullptr;
+public:
+    explicit RamIterator(Ram *ram) {
+        this->ram = ram;
+    }
+
+    void seek(int offset, int wherece = SEEK_SET) {
+        switch (wherece) {
+        }
+    }
 };

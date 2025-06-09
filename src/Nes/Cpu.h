@@ -8,6 +8,8 @@ class Apu;
 
 class Mapper;
 
+class Ram;
+
 class Cpu : public QObject {
 Q_OBJECT
 
@@ -19,7 +21,8 @@ Q_OBJECT
     quint64 dmaCycles = 0;
 
     // stack
-    quint8 *stack = nullptr;
+    Ram *stack = nullptr;
+    quint16 stack_offset = 0x0100;
 
     // zero & negative table
     quint8 znTable[256] = {0};
@@ -30,6 +33,7 @@ Q_OBJECT
     quint32 nmiCount = 0;
 
 public:
+    Q_FLAGS(CpuFlags)
     enum CpuFlag {
         CFlag = 0x01, // carry flag
         ZFlag = 0x02, // zero flag
@@ -40,6 +44,7 @@ public:
         VFlag = 0x40, // overflow flag
         NFlag = 0x80, // negative flag
     };
+    Q_DECLARE_FLAGS(CpuFlags, CpuFlag);
 
     enum CpuInterrupt {
         None = 0x00,        // no interrupt
@@ -80,10 +85,10 @@ private:
     CpuReg reg = {
             .pc = 0x0000,
             .a = 0x00,
-            .p = 0x00,
+            .p = ZFlag | RFlag,
             .x = 0x00,
             .y = 0x00,
-            .s = 0x00,
+            .s = 0xFF,
             .intPending = CpuInterrupt::None,
     };
 

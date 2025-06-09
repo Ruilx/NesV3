@@ -174,3 +174,10 @@ quint8 &Ram::operator[](int addr) {
     this->checkAddr(addr);
     return this->ram[addr];
 }
+
+Ram::~Ram() {
+    delete[] this->ram;
+    this->isAllocated = false;
+    this->ram = nullptr;
+    this->size = 0;
+}
