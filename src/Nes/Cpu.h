@@ -78,9 +78,8 @@ private:
     quint16 wt;
     quint8 dt;
 
-    inline quint8 op8(quint16 addr);
-
-    inline quint16 op16(quint16 addr);
+    static inline quint8 op8(quint16 addr);
+    static inline quint16 op16(quint16 addr);
 
     CpuReg reg = {
             .pc = 0x0000,

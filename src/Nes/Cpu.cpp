@@ -63,4 +63,16 @@ void Cpu::reset() {
     }
 }
 
+quint8 Cpu::op8(quint16 addr) {
+    return mmu.getCpuBank(addr >> 13).bank->getU8(addr & 0x1FFF);
+}
+
+quint16 Cpu::op16(quint16 addr) {
+    return mmu.getCpuBank(addr >> 13).bank->getU16(addr & 0x1FFF);
+}
+
+quint8 Cpu::zeroPageRead(quint8 addr) const {
+    return mmu.get
+}
+
 

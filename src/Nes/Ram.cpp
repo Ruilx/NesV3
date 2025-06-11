@@ -5,7 +5,7 @@
 #include "../Excption/RuntimeError.h"
 
 void Ram::checkAddr(int addr, int bytes) const {
-    if(!this->isAllocated){
+    if(!this->allocated){
         throw RuntimeError("Ram not allocated");
     }
     if (addr < 0 || (addr + bytes - 1) >= this->size) {
@@ -14,10 +14,10 @@ void Ram::checkAddr(int addr, int bytes) const {
 }
 
 void Ram::allocMem() {
-    if (!this->isAllocated and this->ram == nullptr) {
+    if (!this->allocated and this->ram == nullptr) {
         this->ram = new quint8[this->size];
         memset(this->ram, this->initValue, this->size);
-        this->isAllocated = true;
+        this->allocated = true;
     }
 }
 
@@ -177,7 +177,72 @@ quint8 &Ram::operator[](int addr) {
 
 Ram::~Ram() {
     delete[] this->ram;
-    this->isAllocated = false;
+    this->allocated = false;
     this->ram = nullptr;
     this->size = 0;
+}
+
+void Ram::clear(quint8 initValue) {
+    memset(this->ram, initValue, size);
+}
+
+RamIterator *Ram::iterator() {
+    return new RamIterator(this);
+}
+
+const RamIterator *Ram::iterator() const {
+    return new const RamIterator(this);
+}
+
+size_t Ram::getSize() const {
+    return this->size;
+}
+
+bool Ram::isAllocated() const {
+    return this->allocated;
+}
+
+void RamIterator::setRam(Ram *r) {
+    this->ram = r;
+    if(checkAllocated()){
+        this->pointer = r->data();
+        this->size = r->getSize();
+        this->pointerEnd = this->pointer + this->size;
+    }else{
+        throw ValueError("RamIterator: ram is not allocated");
+    }
+
+}
+
+bool RamIterator::checkAllocated() {
+    if (this->ram == nullptr){
+        throw std::runtime_error("RamIterator: ram is nullptr");
+    }
+    return this->ram->isAllocated();
+}
+
+void RamIterator::seek(int offset, int whence) {
+    if (!checkAllocated()){
+        throw ValueError("RamIterator: ram is not allocated");
+    }
+    switch (whence) {
+        case SEEK_SET:
+            this->pointer = this->ram->data() + offset;
+            break;
+        case SEEK_CUR:
+            this->pointer += offset;
+            break;
+        case SEEK_END:
+            this->pointer = this->ram->data() + this->size - offset;
+            break;
+        default:
+            throw ValueError("Invalid whence value");
+    }
+}
+
+quint8 &RamIterator::operator*() {
+    if(!this->checkAllocated()){
+        throw ValueError("RamIterator: ram is not allocated");
+    }
+    return *this->pointer;
 }
