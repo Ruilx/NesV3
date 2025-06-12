@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
 	for (const QString &locale : uiLanguages) {
 		const QString baseName = "NesV3_" + QLocale(locale).name();
 		if (translator.load(":/i18n/" + baseName)) {
-			a.installTranslator(&translator);
+			QApplication::installTranslator(&translator);
 			break;
 		}
 	}

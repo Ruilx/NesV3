@@ -16,6 +16,8 @@ add_library(Nes STATIC
     Mapper/eeprom/x24c02.h
     Ram.cpp
     Ram.h
+        RamBank.cpp
+        RamBank.h
 )
 
 target_include_directories(Nes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -19,8 +19,8 @@ set(PROJECT_SOURCES
 		src/MainWindow.cpp
 		src/MainWindow.h
 		${TS_FILES}
-        src/Excption/OutOfRangeError.cpp
-        src/Excption/OutOfRangeError.h
+		src/Excption/OutOfRangeError.cpp
+		src/Excption/OutOfRangeError.h
 		src/Excption/ValueError.cpp
 		src/Excption/ValueError.h
 		src/Excption/BaseError.cpp
@@ -70,7 +70,7 @@ set_target_properties(NesV3 PROPERTIES
 	MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
 	MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
 	MACOSX_BUNDLE TRUE
-	WIN32_EXECUTABLE TRUE
+	$<$<CONFIG:Release>:WIN32_EXECUTABLE TRUE>
 )
 
 install(TARGETS NesV3

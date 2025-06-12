@@ -69,6 +69,26 @@ public:
     }
 };
 
+class RamPart {
+    Ram *ram = nullptr;
+    quint8 *pointerStart = nullptr;
+    quint8 *pointerEnd = nullptr;
+    quint8 *pointer = nullptr;
+    size_t size = 0;
+
+    void setRam(Ram *ram, int offset, size_t length){
+        this->ram = ram;
+        this->pointerStart = ram->data() + offset;
+        this->pointerEnd = ram->data() + offset + length;
+        this->pointer = this->pointerStart;
+        this->size = length;
+    }
+public:
+    explicit RamPart(Ram *ram, int offset = 0, size_t length = 0){
+        this->setRam(ram, offset, length);
+    }
+}
+
 class RamIterator {
     Ram *ram = nullptr;
     quint8 *pointer = nullptr;
@@ -114,4 +134,3 @@ public:
 
     quint8 &operator*();
 };
-
