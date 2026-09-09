@@ -10,6 +10,8 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(BUILD_TESTS "Build core tests" ON)
+
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets LinguistTools)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets LinguistTools)
 
@@ -46,6 +48,11 @@ set(PROJECT_SOURCES
 
 # 添加Nes子目录
 add_subdirectory(src/Nes)
+
+if(BUILD_TESTS)
+	enable_testing()
+	add_subdirectory(tests)
+endif()
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
 	qt_add_executable(NesV3
