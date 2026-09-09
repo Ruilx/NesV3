@@ -147,6 +147,7 @@ lib/
 
 # build directories
 build/
+build-qt6/
 dist/
 *.egg-info/
 *.egg/

@@ -1,0 +1,181 @@
+#include "NesView.h"
+
+#include "NesScene.h"
+
+#include <QKeyEvent>
+#include <QMouseEvent>
+#include <QScrollBar>
+#include <QWheelEvent>
+
+#include <algorithm>
+
+NesView::NesView(QWidget *parent) : QGraphicsView(parent) {
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setTransformationAnchor(QGraphicsView::NoAnchor);
+    setResizeAnchor(QGraphicsView::NoAnchor);
+    setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
+    setBackgroundBrush(QColor(24, 24, 28));
+    setDragMode(QGraphicsView::NoDrag);
+    setInteractive(true);
+    setFocusPolicy(Qt::StrongFocus);
+    this->scrollTimer.setInterval(16);
+    connect(&this->scrollTimer, &QTimer::timeout, this, &NesView::scrollNametable);
+    scale(this->zoom, this->zoom);
+}
+
+qreal NesView::zoomFactor() const {
+    return this->zoom;
+}
+
+void NesView::resetZoom() {
+    const QPointF viewCenter = viewport()->rect().center();
+    setZoomFactor(1.0, viewCenter);
+}
+
+void NesView::setZoomFactor(qreal factor, const QPointF &viewAnchor) {
+    const qreal clampedFactor = std::clamp(factor, 0.5, 8.0);
+    if (qFuzzyCompare(clampedFactor, this->zoom)) {
+        return;
+    }
+
+    const QPointF sceneAnchor = mapToScene(viewAnchor.toPoint());
+    const qreal scaleRatio = clampedFactor / this->zoom;
+    this->zoom = clampedFactor;
+    scale(scaleRatio, scaleRatio);
+
+    const QPointF newSceneAnchor = mapToScene(viewAnchor.toPoint());
+    const QPointF delta = newSceneAnchor - sceneAnchor;
+    translate(delta.x(), delta.y());
+}
+
+void NesView::wheelEvent(QWheelEvent *event) {
+    if (event->angleDelta().y() == 0) {
+        event->ignore();
+        return;
+    }
+
+    const qreal direction = event->angleDelta().y() > 0 ? 1.15 : 1.0 / 1.15;
+    setZoomFactor(this->zoom * direction, event->position());
+    event->accept();
+}
+
+void NesView::mousePressEvent(QMouseEvent *event) {
+    setFocus();
+    if (event->button() == Qt::RightButton) {
+        this->panning = true;
+        this->lastMousePosition = event->pos();
+        setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
+    }
+
+    QGraphicsView::mousePressEvent(event);
+}
+
+void NesView::mouseMoveEvent(QMouseEvent *event) {
+    if (!this->panning) {
+        QGraphicsView::mouseMoveEvent(event);
+        return;
+    }
+
+    const QPoint delta = event->pos() - this->lastMousePosition;
+    horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
+    verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y());
+    this->lastMousePosition = event->pos();
+    event->accept();
+}
+
+void NesView::mouseReleaseEvent(QMouseEvent *event) {
+    if (event->button() == Qt::RightButton && this->panning) {
+        this->panning = false;
+        unsetCursor();
+        event->accept();
+        return;
+    }
+
+    QGraphicsView::mouseReleaseEvent(event);
+}
+
+void NesView::keyPressEvent(QKeyEvent *event) {
+    bool handled = true;
+    switch (event->key()) {
+        case Qt::Key_Left:
+            this->scrollLeft = true;
+            break;
+        case Qt::Key_Right:
+            this->scrollRight = true;
+            break;
+        case Qt::Key_Up:
+            this->scrollUp = true;
+            break;
+        case Qt::Key_Down:
+            this->scrollDown = true;
+            break;
+        default:
+            handled = false;
+            break;
+    }
+
+    if (!handled) {
+        QGraphicsView::keyPressEvent(event);
+        return;
+    }
+
+    updateScrollTimer();
+    event->accept();
+}
+
+void NesView::keyReleaseEvent(QKeyEvent *event) {
+    bool handled = true;
+    switch (event->key()) {
+        case Qt::Key_Left:
+            this->scrollLeft = false;
+            break;
+        case Qt::Key_Right:
+            this->scrollRight = false;
+            break;
+        case Qt::Key_Up:
+            this->scrollUp = false;
+            break;
+        case Qt::Key_Down:
+            this->scrollDown = false;
+            break;
+        default:
+            handled = false;
+            break;
+    }
+
+    if (!handled) {
+        QGraphicsView::keyReleaseEvent(event);
+        return;
+    }
+
+    updateScrollTimer();
+    event->accept();
+}
+
+void NesView::updateScrollTimer() {
+    const bool scrolling = this->scrollLeft || this->scrollRight
+                           || this->scrollUp || this->scrollDown;
+    if (scrolling) {
+        if (!this->scrollTimer.isActive()) {
+            this->scrollTimer.start();
+        }
+    } else {
+        this->scrollTimer.stop();
+    }
+}
+
+void NesView::scrollNametable() {
+    auto *nesScene = qobject_cast<NesScene *>(scene());
+    if (nesScene == nullptr) {
+        return;
+    }
+
+    const qreal deltaX = (this->scrollRight ? 1.0 : 0.0)
+                         - (this->scrollLeft ? 1.0 : 0.0);
+    const qreal deltaY = (this->scrollDown ? 1.0 : 0.0)
+                         - (this->scrollUp ? 1.0 : 0.0);
+    nesScene->scrollBy(deltaX, deltaY);
+}

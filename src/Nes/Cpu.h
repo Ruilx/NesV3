@@ -2,6 +2,9 @@
 
 #include <QObject>
 
+#include "Bus.h"
+#include "Ram.h"
+
 class Nes;
 
 class Apu;
@@ -13,6 +16,9 @@ class Ram;
 class Cpu : public QObject {
 Q_OBJECT
 
+    Bus cpuBus;
+    Ram internalRam;
+    RamBusDevice internalRamDevice;
     Nes *nes = nullptr;
     Apu *apu = nullptr;
     Mapper *mapper = nullptr;
@@ -78,8 +84,8 @@ private:
     quint16 wt;
     quint8 dt;
 
-    static inline quint8 op8(quint16 addr);
-    static inline quint16 op16(quint16 addr);
+    inline quint8 op8(quint16 addr);
+    inline quint16 op16(quint16 addr);
 
     CpuReg reg = {
             .pc = 0x0000,
@@ -92,9 +98,7 @@ private:
     };
 
 public:
-    explicit Cpu(Nes *nes, QObject *parent = nullptr) : QObject(parent) {
-
-    }
+    explicit Cpu(Nes *nes, QObject *parent = nullptr);
 
     ~Cpu() override = default;
 
@@ -130,12 +134,15 @@ public:
 
     void setClockProcess(bool e) { this->clockProcess = e; }
 
+    [[nodiscard]] Bus &bus() { return this->cpuBus; }
+    [[nodiscard]] const Bus &bus() const { return this->cpuBus; }
+
 private:
     // op part
     // zero page read
-    inline quint8 zeroPageRead(quint8 addr) const;
+    inline quint8 zeroPageRead(quint8 addr);
 
-    inline quint16 zeroPageReadW(quint8 addr) const;
+    inline quint16 zeroPageReadW(quint8 addr);
 
     // zero page write
     inline void zeroPageWrite(quint8 addr, quint8 value);

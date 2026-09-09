@@ -2,247 +2,116 @@
 
 #include "../Excption/OutOfRangeError.h"
 #include "../Excption/ValueError.h"
-#include "../Excption/RuntimeError.h"
+#include <QByteArray>
 
-void Ram::checkAddr(int addr, int bytes) const {
-    if(!this->allocated){
-        throw RuntimeError("Ram not allocated");
+namespace {
+quint32 readUnsigned(const QByteArray &bytes, qsizetype address, qsizetype width, QSysInfo::Endian endian) {
+    quint32 value = 0;
+    if (endian == QSysInfo::LittleEndian) {
+        for (qsizetype index = width - 1; index >= 0; --index) {
+            value = (value << 8) | static_cast<quint8>(bytes.at(address + index));
+        }
+    } else {
+        for (qsizetype index = 0; index < width; ++index) {
+            value = (value << 8) | static_cast<quint8>(bytes.at(address + index));
+        }
     }
-    if (addr < 0 || (addr + bytes - 1) >= this->size) {
-        throw OutOfRangeError(QString("Ram address out of range: %1 to %2").arg(addr).arg(addr + bytes - 1));
-    }
+    return value;
 }
 
-void Ram::allocMem() {
-    if (!this->allocated and this->ram == nullptr) {
-        this->ram = new quint8[this->size];
-        memset(this->ram, this->initValue, this->size);
-        this->allocated = true;
+void writeUnsigned(QByteArray &bytes, qsizetype address, quint32 value, qsizetype width, QSysInfo::Endian endian) {
+    for (qsizetype index = 0; index < width; ++index) {
+        const qsizetype destination = endian == QSysInfo::LittleEndian
+            ? address + index
+            : address + width - index - 1;
+        bytes[destination] = static_cast<char>(value >> (index * 8));
     }
 }
+}
 
-Ram::Ram(size_t size, quint8 initValue) {
-    if (size <= 0) {
+Ram::Ram(size_t size, quint8 initValue)
+    : ram(static_cast<qsizetype>(size), static_cast<char>(initValue)) {
+    if (size == 0) {
         throw ValueError("Ram size must be greater than 0");
     }
-    this->size = size;
-    this->initValue = initValue
 }
 
-void Ram::set8(int addr, qint8 value) {
-    this->allocMem();
-    this->checkAddr(addr);
-    this->ram[addr] = quint8(value);
-}
-
-qint8 Ram::get8(int addr) {
-    this->checkAddr(addr);
-    return qint8(this->ram[addr]);
-}
-
-void Ram::setU8(int addr, quint8 value) {
-    this->allocMem();
-    this->checkAddr(addr);
-    this->ram[addr] = value;
-}
-
-quint8 Ram::getU8(int addr) {
-    this->checkAddr(addr);
-    return ram[addr];
-}
-
-void Ram::set16(int addr, qint16 value, QSysInfo::Endian endian) {
-    this->allocMem();
-    this->checkAddr(addr, 2);
-    if (endian == QSysInfo::LittleEndian) {
-        this->ram[addr] = quint8(value & 0xFF);
-        this->ram[addr + 1] = quint8((value >> 8) & 0xFF);
-    } else {
-        this->ram[addr] = quint8((value >> 8) & 0xFF);
-        this->ram[addr + 1] = quint8(value & 0xFF);
+void Ram::checkAddr(qsizetype address, qsizetype bytes) const {
+    if (address < 0 || bytes <= 0 || address > this->ram.size() - bytes) {
+        throw OutOfRangeError(QString("Ram address out of range: %1 to %2")
+                                  .arg(address)
+                                  .arg(address + bytes - 1));
     }
 }
 
-qint16 Ram::get16(int addr, QSysInfo::Endian endian) {
-    this->checkAddr(addr, 2);
-    if (endian == QSysInfo::LittleEndian) {
-        return qint16((this->ram[addr] & 0xFF) | ((this->ram[addr + 1] & 0xFF) << 8));
-    } else {
-        return qint16(((this->ram[addr + 1] & 0xFF) << 8) | (this->ram[addr] & 0xFF));
-    }
-
+void Ram::set8(qsizetype address, qint8 value) {
+    this->setU8(address, static_cast<quint8>(value));
 }
 
-void Ram::setU16(int addr, quint16 value, QSysInfo::Endian endian) {
-    this->allocMem();
-    this->checkAddr(addr, 2);
-    if (endian == QSysInfo::LittleEndian) {
-        this->ram[addr] = quint8(value & 0xFF);
-        this->ram[addr + 1] = quint8((value >> 8) & 0xFF);
-    } else {
-        this->ram[addr] = quint8((value >> 8) & 0xFF);
-        this->ram[addr + 1] = quint8(value & 0xFF);
-    }
+qint8 Ram::get8(qsizetype address) const {
+    return static_cast<qint8>(this->getU8(address));
 }
 
-quint16 Ram::getU16(int addr, QSysInfo::Endian endian) {
-    this->checkAddr(addr, 2);
-    if (endian == QSysInfo::LittleEndian) {
-        return quint16((this->ram[addr] & 0xFF) | ((this->ram[addr + 1] & 0xFF) << 8));
-    } else {
-        return quint16(((this->ram[addr + 1] & 0xFF) << 8) | (this->ram[addr] & 0xFF));
-    }
+void Ram::setU8(qsizetype address, quint8 value) {
+    this->checkAddr(address);
+    this->ram[address] = static_cast<char>(value);
 }
 
-void Ram::set32(int addr, qint32 value, QSysInfo::Endian endian) {
-    this->allocMem();
-    this->checkAddr(addr, 4);
-    if (endian == QSysInfo::LittleEndian) {
-        this->ram[addr] = quint8(value & 0xFF);
-        this->ram[addr + 1] = quint8((value >> 8) & 0xFF);
-        this->ram[addr + 2] = quint8((value >> 16) & 0xFF);
-        this->ram[addr + 3] = quint8((value >> 24) & 0xFF);
-    } else {
-        this->ram[addr] = quint8((value >> 24) & 0xFF);
-        this->ram[addr + 1] = quint8((value >> 16) & 0xFF);
-        this->ram[addr + 2] = quint8((value >> 8) & 0xFF);
-        this->ram[addr + 3] = quint8(value & 0xFF);
-    }
+quint8 Ram::getU8(qsizetype address) const {
+    this->checkAddr(address);
+    return static_cast<quint8>(this->ram.at(address));
 }
 
-qint32 Ram::get32(int addr, QSysInfo::Endian endian) {
-    this->checkAddr(addr, 4);
-    if (endian == QSysInfo::LittleEndian) {
-        return qint32(
-                (this->ram[addr] & 0xFF) |
-                ((this->ram[addr + 1] & 0xFF) << 8) |
-                ((this->ram[addr + 2] & 0xFF) << 16) |
-                ((this->ram[addr + 3] & 0xFF) << 24)
-        );
-    } else {
-        return qint32(
-                ((this->ram[addr + 3] & 0xFF) << 24) |
-                ((this->ram[addr + 2] & 0xFF) << 16) |
-                ((this->ram[addr + 1] & 0xFF) << 8) |
-                (this->ram[addr] & 0xFF)
-        );
-    }
+void Ram::set16(qsizetype address, qint16 value, QSysInfo::Endian endian) {
+    this->setU16(address, static_cast<quint16>(value), endian);
 }
 
-void Ram::setU32(int addr, quint32 value, QSysInfo::Endian endian) {
-    this->allocMem();
-    this->checkAddr(addr, 4);
-    if (endian == QSysInfo::LittleEndian) {
-        this->ram[addr] = quint8(value & 0xFF);
-        this->ram[addr + 1] = quint8((value >> 8) & 0xFF);
-        this->ram[addr + 2] = quint8((value >> 16) & 0xFF);
-        this->ram[addr + 3] = quint8((value >> 24) & 0xFF);
-    } else {
-        this->ram[addr] = quint8((value >> 24) & 0xFF);
-        this->ram[addr + 1] = quint8((value >> 16) & 0xFF);
-        this->ram[addr + 2] = quint8((value >> 8) & 0xFF);
-        this->ram[addr + 3] = quint8(value & 0xFF);
-    }
+qint16 Ram::get16(qsizetype address, QSysInfo::Endian endian) const {
+    return static_cast<qint16>(this->getU16(address, endian));
 }
 
-quint32 Ram::getU32(int addr, QSysInfo::Endian endian) {
-    this->checkAddr(addr, 4);
-    if (endian == QSysInfo::LittleEndian) {
-        return quint32(
-                (this->ram[addr] & 0xFF) |
-                ((this->ram[addr + 1] & 0xFF) << 8) |
-                ((this->ram[addr + 2] & 0xFF) << 16) |
-                ((this->ram[addr + 3] & 0xFF) << 24)
-        );
-    } else {
-        return quint32(
-                ((this->ram[addr + 3] & 0xFF) << 24) |
-                ((this->ram[addr + 2] & 0xFF) << 16) |
-                ((this->ram[addr + 1] & 0xFF) << 8) |
-                (this->ram[addr] & 0xFF)
-        );
-    }
+void Ram::setU16(qsizetype address, quint16 value, QSysInfo::Endian endian) {
+    this->checkAddr(address, sizeof(value));
+    writeUnsigned(this->ram, address, value, sizeof(value), endian);
 }
 
-const quint8 &Ram::operator[](int addr) const {
-    this->checkAddr(addr);
-    return this->ram[addr];
+quint16 Ram::getU16(qsizetype address, QSysInfo::Endian endian) const {
+    this->checkAddr(address, sizeof(quint16));
+    return static_cast<quint16>(readUnsigned(this->ram, address, sizeof(quint16), endian));
 }
 
-quint8 &Ram::operator[](int addr) {
-    this->allocMem();
-    this->checkAddr(addr);
-    return this->ram[addr];
+void Ram::set32(qsizetype address, qint32 value, QSysInfo::Endian endian) {
+    this->setU32(address, static_cast<quint32>(value), endian);
 }
 
-Ram::~Ram() {
-    delete[] this->ram;
-    this->allocated = false;
-    this->ram = nullptr;
-    this->size = 0;
+qint32 Ram::get32(qsizetype address, QSysInfo::Endian endian) const {
+    return static_cast<qint32>(this->getU32(address, endian));
 }
 
-void Ram::clear(quint8 initValue) {
-    memset(this->ram, initValue, size);
+void Ram::setU32(qsizetype address, quint32 value, QSysInfo::Endian endian) {
+    this->checkAddr(address, sizeof(value));
+    writeUnsigned(this->ram, address, value, sizeof(value), endian);
 }
 
-RamIterator *Ram::iterator() {
-    return new RamIterator(this);
+quint32 Ram::getU32(qsizetype address, QSysInfo::Endian endian) const {
+    this->checkAddr(address, sizeof(quint32));
+    return readUnsigned(this->ram, address, sizeof(quint32), endian);
 }
 
-const RamIterator *Ram::iterator() const {
-    return new const RamIterator(this);
+const quint8 &Ram::operator[](qsizetype address) const {
+    this->checkAddr(address);
+    return reinterpret_cast<const quint8 *>(this->ram.constData())[address];
+}
+
+quint8 &Ram::operator[](qsizetype address) {
+    this->checkAddr(address);
+    return reinterpret_cast<quint8 *>(this->ram.data())[address];
 }
 
 size_t Ram::getSize() const {
-    return this->size;
+    return static_cast<size_t>(this->ram.size());
 }
 
-bool Ram::isAllocated() const {
-    return this->allocated;
-}
-
-void RamIterator::setRam(Ram *r) {
-    this->ram = r;
-    if(checkAllocated()){
-        this->pointer = r->data();
-        this->size = r->getSize();
-        this->pointerEnd = this->pointer + this->size;
-    }else{
-        throw ValueError("RamIterator: ram is not allocated");
-    }
-
-}
-
-bool RamIterator::checkAllocated() {
-    if (this->ram == nullptr){
-        throw std::runtime_error("RamIterator: ram is nullptr");
-    }
-    return this->ram->isAllocated();
-}
-
-void RamIterator::seek(int offset, int whence) {
-    if (!checkAllocated()){
-        throw ValueError("RamIterator: ram is not allocated");
-    }
-    switch (whence) {
-        case SEEK_SET:
-            this->pointer = this->ram->data() + offset;
-            break;
-        case SEEK_CUR:
-            this->pointer += offset;
-            break;
-        case SEEK_END:
-            this->pointer = this->ram->data() + this->size - offset;
-            break;
-        default:
-            throw ValueError("Invalid whence value");
-    }
-}
-
-quint8 &RamIterator::operator*() {
-    if(!this->checkAllocated()){
-        throw ValueError("RamIterator: ram is not allocated");
-    }
-    return *this->pointer;
+void Ram::clear(quint8 value) {
+    this->ram.fill(static_cast<char>(value));
 }

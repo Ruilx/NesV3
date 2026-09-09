@@ -6,8 +6,9 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets LinguistTools)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets LinguistTools)
@@ -18,6 +19,16 @@ set(PROJECT_SOURCES
 	    src/main.cpp
 		src/MainWindow.cpp
 		src/MainWindow.h
+		src/NesView.cpp
+		src/NesView.h
+		src/NesScene.cpp
+		src/NesScene.h
+		src/NesPalette.cpp
+		src/NesPalette.h
+		src/PaletteEditorDialog.cpp
+		src/PaletteEditorDialog.h
+		src/NesNametableItem.cpp
+		src/NesNametableItem.h
 		${TS_FILES}
 		src/Excption/OutOfRangeError.cpp
 		src/Excption/OutOfRangeError.h

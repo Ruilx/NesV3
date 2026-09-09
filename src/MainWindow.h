@@ -3,6 +3,8 @@
 
 #include <QMainWindow>
 
+class NesScene;
+
 class MainWindow : public QMainWindow
 {
 	Q_OBJECT
@@ -10,5 +12,11 @@ class MainWindow : public QMainWindow
 public:
 	MainWindow(QWidget *parent = nullptr);
 	~MainWindow() override;
+
+private:
+	void savePalette();
+	void openPaletteEditor();
+
+	NesScene *scene = nullptr;
 };
 #endif // MAINWINDOW_H
