@@ -1,4 +1,5 @@
 #include "Cartridge.h"
+#include "NesClock.h"
 #include "Ram.h"
 
 #include <cstdlib>
@@ -124,6 +125,64 @@ void testCpuPpuBusIsolation() {
     check(cpuBus.read(0x0000, value) == Bus::AccessResult::Handled && value == 0x33,
           "CPU bus should retain its own RAM mapping");
 }
+
+void testBusRejectsOverlappingMappings() {
+    Ram ram(0x1000);
+    RamBusDevice device(ram);
+    Bus bus(0x10000);
+
+    const Bus::Mapping firstMapping{
+        .start = 0x1000,
+        .end = 0x17FF,
+        .priority = 0,
+        .flags = AccessFlags::Readable | AccessFlags::Writable,
+        .name = QStringLiteral("First mapping"),
+        .device = &device,
+    };
+    const Bus::Mapping adjacentMapping{
+        .start = 0x1800,
+        .end = 0x1FFF,
+        .priority = 10,
+        .flags = AccessFlags::Readable | AccessFlags::Writable,
+        .name = QStringLiteral("Adjacent mapping"),
+        .device = &device,
+    };
+    const Bus::Mapping overlappingMapping{
+        .start = 0x1700,
+        .end = 0x18FF,
+        .priority = 10,
+        .flags = AccessFlags::Readable | AccessFlags::Writable,
+        .name = QStringLiteral("Overlapping mapping"),
+        .device = &device,
+    };
+
+    check(bus.registerMapping(firstMapping) != 0, "first mapping should register");
+    check(bus.registerMapping(adjacentMapping) != 0, "adjacent mapping should register");
+    check(bus.registerMapping(overlappingMapping) == 0,
+          "overlapping mapping should be rejected regardless of priority");
+}
+
+void testNesClockRatio() {
+    quint64 cpuCycles = 0;
+    quint64 ppuTicks = 0;
+    NesClock clock(
+        [&cpuCycles]() { ++cpuCycles; },
+        [&ppuTicks]() { ++ppuTicks; });
+
+    clock.runPpuTicks(2);
+    check(clock.ppuTicks() == 2, "clock should count PPU ticks");
+    check(clock.cpuCycles() == 0, "CPU should wait for three PPU ticks");
+    check(ppuTicks == 2, "PPU should receive every clock tick");
+    check(cpuCycles == 0, "CPU should not receive an early cycle");
+
+    clock.tick();
+    check(clock.cpuCycles() == 1, "three PPU ticks should produce one CPU cycle");
+    check(cpuCycles == 1, "CPU should receive one cycle after three PPU ticks");
+
+    clock.runPpuTicks(6);
+    check(clock.ppuTicks() == 9, "clock should retain total PPU tick count");
+    check(clock.cpuCycles() == 3, "nine PPU ticks should produce three CPU cycles");
+}
 }
 
 int main() {
@@ -132,6 +191,8 @@ int main() {
     testCartridgeChrReadOnly();
     testCartridgeDisconnect();
     testCpuPpuBusIsolation();
+    testBusRejectsOverlappingMappings();
+    testNesClockRatio();
     std::cout << "NesCoreTests passed\n";
     return EXIT_SUCCESS;
 }

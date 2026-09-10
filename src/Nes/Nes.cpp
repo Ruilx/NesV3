@@ -2,8 +2,11 @@
 
 Nes::Nes()
     : cpuComponent(this),
-      ppuComponent(),
-      cartridgeComponent() {
+            ppuComponent(),
+            cartridgeComponent(),
+            clockComponent(
+                    [this]() { this->cpuComponent.clock(); },
+                    [this]() { this->ppuComponent.clock(); }) {
     this->cartridgeComponent.connect(this->cpuComponent.bus(), this->ppuComponent.bus());
 }
 
@@ -29,4 +32,12 @@ Cartridge &Nes::cartridge() {
 
 const Cartridge &Nes::cartridge() const {
     return this->cartridgeComponent;
+}
+
+NesClock &Nes::clock() {
+    return this->clockComponent;
+}
+
+const NesClock &Nes::clock() const {
+    return this->clockComponent;
 }

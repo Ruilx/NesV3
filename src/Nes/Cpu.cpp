@@ -89,6 +89,10 @@ void Cpu::reset() {
     }
 }
 
+void Cpu::clock() {
+    ++this->totalCycles;
+}
+
 quint8 Cpu::op8(quint16 addr) {
     quint8 value = this->cpuBus.openBusValue();
     this->cpuBus.read(addr, value);

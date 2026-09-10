@@ -3,6 +3,7 @@
 #include "Cartridge.h"
 #include "Cpu.h"
 #include "Ppu.h"
+#include "NesClock.h"
 
 class Nes {
 public:
@@ -17,9 +18,12 @@ public:
     [[nodiscard]] const Ppu &ppu() const;
     [[nodiscard]] Cartridge &cartridge();
     [[nodiscard]] const Cartridge &cartridge() const;
+    [[nodiscard]] NesClock &clock();
+    [[nodiscard]] const NesClock &clock() const;
 
 private:
     Cpu cpuComponent;
     Ppu ppuComponent;
     Cartridge cartridgeComponent;
+    NesClock clockComponent;
 };

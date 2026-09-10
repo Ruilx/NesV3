@@ -13,8 +13,7 @@ Bus::MappingId Bus::registerMapping(const Mapping &mapping) {
     }
 
     for (const RegisteredMapping &registered : this->mappings) {
-        if (registered.mapping.priority == mapping.priority
-            && overlaps(registered.mapping, mapping)) {
+        if (overlaps(registered.mapping, mapping)) {
             return 0;
         }
     }

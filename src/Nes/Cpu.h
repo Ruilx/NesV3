@@ -110,6 +110,8 @@ public:
 
     void reset();
 
+    void clock();
+
     void nmi();
 
     void setIrq(quint8 mask);
