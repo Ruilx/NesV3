@@ -1,7 +1,7 @@
 #include "Nes.h"
 
 Nes::Nes()
-    : cpuComponent(this),
+    : cpuComponent(),
             ppuComponent(),
             cartridgeComponent(),
             clockComponent(

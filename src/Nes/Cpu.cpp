@@ -1,11 +1,10 @@
 #include "Cpu.h"
 
-Cpu::Cpu(Nes *nes, QObject *parent)
+Cpu::Cpu(QObject *parent)
     : QObject(parent),
       cpuBus(0x10000),
     internalRam(0x0800),
-    internalRamDevice(this->internalRam),
-      nes(nes) {
+                internalRamDevice(this->internalRam) {
     const Bus::Mapping internalRamMapping{
         .start = 0x0000,
         .end = 0x1FFF,
@@ -21,72 +20,19 @@ Cpu::Cpu(Nes *nes, QObject *parent)
 }
 
 quint8 Cpu::readRam8(quint16 addr) {
-    if (addr < 0x2000) {
-        quint8 value = this->cpuBus.openBusValue();
-        this->cpuBus.read(addr, value);
-        return value;
-    } else if (addr < 0x8000) {
-        // others
-        //return this->nes->read(addr);
-    } else {
-        quint8 value = this->cpuBus.openBusValue();
-        this->cpuBus.read(addr, value);
-        return value;
-    }
-    return 0;
+    quint8 value = this->cpuBus.openBusValue();
+    this->cpuBus.read(addr, value);
+    return value;
 }
 
 quint16 Cpu::readRam16(quint16 addr) {
-    if (addr < 0x2000) {
-        quint8 low = this->cpuBus.openBusValue();
-        quint8 high = this->cpuBus.openBusValue();
-        this->cpuBus.read(addr, low);
-        this->cpuBus.read(static_cast<quint16>(addr + 1), high);
-        return static_cast<quint16>(low | (high << 8));
-    } else if (addr < 0x8000) {
-        // others
-        //return this->nes->read(addr);
-        return 0;
-    } else {
-        quint8 low = this->cpuBus.openBusValue();
-        quint8 high = this->cpuBus.openBusValue();
-        this->cpuBus.read(addr, low);
-        this->cpuBus.read(static_cast<quint16>(addr + 1), high);
-        return static_cast<quint16>(low | (high << 8));
-    }
-
+    const quint8 low = this->readRam8(addr);
+    const quint8 high = this->readRam8(static_cast<quint16>(addr + 1));
+    return static_cast<quint16>(low | (static_cast<quint16>(high) << 8));
 }
 
 void Cpu::writeRam(quint16 addr, quint8 value) {
-    if (addr < 0x2000) {
-        this->cpuBus.write(addr, value);
-    } else {
-        // others
-        // nes->write(addr, data);
-    }
-}
-
-void Cpu::reset() {
-    this->reg.a = 0x00;
-    this->reg.x = 0x00;
-    this->reg.y = 0x00;
-    this->reg.s = 0xFF;
-    this->reg.p = ZFlag | RFlag;
-    this->reg.pc = this->readRam16(Cpu::ResVector);
-    this->reg.intPending = CpuInterrupt::None;
-
-    this->totalCycles = 0;
-    this->dmaCycles = 0;
-
-    // stack quick access
-    this->stack = &this->internalRam;
-    this->stack_offset = 0x0100;
-
-    // zero/negative flag
-    this->znTable[0] = ZFlag;
-    for (quint16 i = 1; i < 256; i++) {
-        this->znTable[i] = (i & 0x80) ? NFlag : 0;
-    }
+    this->cpuBus.write(addr, value);
 }
 
 void Cpu::clock() {
@@ -107,135 +53,131 @@ quint16 Cpu::op16(quint16 addr) {
     return static_cast<quint16>(low | (high << 8));
 }
 
-quint8 Cpu::zeroPageRead(quint8 addr) {
-    quint8 value = this->cpuBus.openBusValue();
-    this->cpuBus.read(addr, value);
-    return value;
+//--------------- CPU helpers migrated to CpuBus
+
+quint8 Cpu::zeroPageRead(quint8 addr) { return this->readRam8(addr); }
+quint16 Cpu::zeroPageReadW(quint8 addr) {
+    const quint8 low = this->zeroPageRead(addr);
+    const quint8 high = this->zeroPageRead(static_cast<quint8>(addr + 1));
+    return static_cast<quint16>(low | (static_cast<quint16>(high) << 8));
 }
-
-//--------------- 以下是我从之前的cpu.cpp 文件实现指令的部分代码
-
-#include <Nes/Mmu.h>
-
-quint8 Cpu::opCpu(quint16 addr) { return mmu->getCpuMemBank()[addr >> 13][addr & 0x1FFF];}
-quint16 Cpu::opCpuW(quint16 addr) { return *((quint16) &mmu->getCpuMemBank()[addr >> 13][addr & 0x1FFF]);}
-
-quint8 Cpu::zeroPageRead(quint8 addr) const { return mmu->getRam()[addr]; }
-quint16 Cpu::zeroPageReadW(quint8 addr) const { return (quint16)mmu->getRam()[addr] | ((quint16)mmu->getRam()[addr + 1] << 8); }
-void Cpu::zeroPageWrite(quint8 addr, quint8 value) { mmu->getRam()[addr] = value; }
-void Cpu::zeroPageWriteW(quint8 addr, quint16 value) { mmu->getRam()[addr] = value & 0xFF; mmu->getRam()[addr + 1] = (value >> 8);}
+void Cpu::zeroPageWrite(quint8 addr, quint8 value) { this->writeRam(addr, value); }
+void Cpu::zeroPageWriteW(quint8 addr, quint16 value) {
+    this->zeroPageWrite(addr, static_cast<quint8>(value & 0xFF));
+    this->zeroPageWrite(static_cast<quint8>(addr + 1), static_cast<quint8>(value >> 8));
+}
 
 quint8 Cpu::checkEa() const { return (this->et & 0xFF00) != (this->ea & 0xFF00) ? 1 : 0; }
 
 void Cpu::setZnFlag(quint8 flag) {
-    this->r.p &= ~(Cpu::ZFlag | Cpu::NFlag);
-    this->r.p |= this->znTable[flag];
+    this->reg.p &= ~(Cpu::ZFlag | Cpu::NFlag);
+    this->reg.p |= this->znTable[flag];
 }
 
-void Cpu::setFlag(quint8 flag) { this->r.p |= flag; }
-void Cpu::clearFlag(quint8 flag) { this->r.p &= ~flag; }
+void Cpu::setFlag(quint8 flag) { this->reg.p |= flag; }
+void Cpu::clearFlag(quint8 flag) { this->reg.p &= ~flag; }
 void Cpu::testFlag(bool ok, quint8 flag) {
     this->clearFlag(flag);
     if(ok){
         this->setFlag(flag);
     }
 }
-bool Cpu::checkFlag(quint8 flag) const { return this->r.p & flag; }
+bool Cpu::checkFlag(quint8 flag) const { return this->reg.p & flag; }
 
 void Cpu::mrIm() {
-    this->dt = this->opCpu(this->r.pc++);
+    this->dt = this->op8(this->reg.pc++);
 }
 
 void Cpu::mrZp() {
-    this->ea = this->opCpu(this->r.pc++);
+    this->ea = this->op8(this->reg.pc++);
     this->dt = this->zeroPageRead(this->ea);
 }
 
 void Cpu::mrZx() {
-    this->dt = this->opCpu(this->r.pc++);
-    this->ea = (quint8)(this->dt + this->r.x);
+    this->dt = this->op8(this->reg.pc++);
+    this->ea = (quint8)(this->dt + this->reg.x);
     this->dt = this->zeroPageRead(this->ea);
 }
 
 void Cpu::mrZy() {
-    this->dt = this->opCpu(this->r.pc++);
-    this->ea = (quint8)(this->dt + this->r.y);
+    this->dt = this->op8(this->reg.pc++);
+    this->ea = (quint8)(this->dt + this->reg.y);
     this->dt = this->zeroPageRead(this->ea);
 }
 
 void Cpu::mrAb() {
-    this->ea = this->opCpuW(this->r.pc);
-    this->r.pc += 2;
-    this->dt = this->rdCpu(this->ea);
+    this->ea = this->op16(this->reg.pc);
+    this->reg.pc += 2;
+    this->dt = this->readRam8(this->ea);
 }
 
 void Cpu::mrAx() {
-    this->et = this->opCpuW(this->r.pc);
-    this->r.pc += 2;
-    this->ea = this->et + this->r.x;
-    this->dt = this->rdCpu(this->ea);
+    this->et = this->op16(this->reg.pc);
+    this->reg.pc += 2;
+    this->ea = this->et + this->reg.x;
+    this->dt = this->readRam8(this->ea);
 }
 
 void Cpu::mrAy() {
-    this->et = this->opCpuW(this->r.pc);
-    this->r.pc += 2;
-    this->ea = this->et + this->r.y;
-    this->dt = this->rdCpu(this->ea);
+    this->et = this->op16(this->reg.pc);
+    this->reg.pc += 2;
+    this->ea = this->et + this->reg.y;
+    this->dt = this->readRam8(this->ea);
 }
 
 void Cpu::mrIx() {
-    this->dt = this->opCpu(this->r.pc++);
-    this->ea = this->zeroPageReadW(this->dt + this->r.x);
-    this->dt = this->rdCpu(this->ea);
+    this->dt = this->op8(this->reg.pc++);
+    this->ea = this->zeroPageReadW(this->dt + this->reg.x);
+    this->dt = this->readRam8(this->ea);
 }
 
 void Cpu::mrIy() {
-    this->dt = this->opCpu(this->r.pc++);
+    this->dt = this->op8(this->reg.pc++);
     this->et = this->zeroPageReadW(this->dt);
-    this->ea = this->et + this->r.y;
-    this->dt = this->rdCpu(this->ea);
+    this->ea = this->et + this->reg.y;
+    this->dt = this->readRam8(this->ea);
 }
 
 void Cpu::eaZp() {
-    this->ea = this->opCpu(this->r.pc++);
+    this->ea = this->op8(this->reg.pc++);
 }
 
 void Cpu::eaZx() {
-    this->dt = this->opCpu(this->r.pc++);
-    this->ea = (quint8)(this->dt + this->r.x);
+    this->dt = this->op8(this->reg.pc++);
+    this->ea = (quint8)(this->dt + this->reg.x);
 }
 
 void Cpu::eaZy() {
-    this->dt = this->opCpu(this->r.pc++);
-    this->ea = (quint8)(this->dt + this->r.y);
+    this->dt = this->op8(this->reg.pc++);
+    this->ea = (quint8)(this->dt + this->reg.y);
 }
 
 void Cpu::eaAb() {
-    this->ea = this->opCpuW(this->r.pc);
-    this->r.pc += 2;
+    this->ea = this->op16(this->reg.pc);
+    this->reg.pc += 2;
 }
 
 void Cpu::eaAx() {
-    this->et = this->opCpuW(this->r.pc);
-    this->r.pc += 2;
-    this->ea = this->et + this->r.x;
+    this->et = this->op16(this->reg.pc);
+    this->reg.pc += 2;
+    this->ea = this->et + this->reg.x;
 }
 
 void Cpu::eaAy() {
-    this->et = this->opCpuW(this->r.pc);
-    this->r.pc += 2;
-    this->ea = this->et + this->r.y;
+    this->et = this->op16(this->reg.pc);
+    this->reg.pc += 2;
+    this->ea = this->et + this->reg.y;
 }
 
 void Cpu::eaIx() {
-    this->dt = this->opCpu(this->r.pc++);
-    this->ea = this->zeroPageReadW(this->dt + this->r.x);
+    this->dt = this->op8(this->reg.pc++);
+    this->ea = this->zeroPageReadW(this->dt + this->reg.x);
 }
 
 void Cpu::eaIy() {
-    this->dt = this->opCpu(this->r.pc++);
+    this->dt = this->op8(this->reg.pc++);
     this->et = this->zeroPageReadW(this->dt);
-    this->ea = this->et + (quint16)this->r.y;
+    this->ea = this->et + (quint16)this->reg.y;
 }
 
 void Cpu::mwZp() {
@@ -243,27 +185,27 @@ void Cpu::mwZp() {
 }
 
 void Cpu::mwEa() {
-    this->wrCpu(this->ea, this->dt);
+    this->writeRam(this->ea, this->dt);
 }
 
-void Cpu::push(quint8 data){ this->stack[(this->r.s--) & 0xFF] = data; }
-quint8 Cpu::pop(){ return this->stack[(++this->r.s) & 0xFF]; }
+void Cpu::push(quint8 data){ this->writeRam(static_cast<quint16>(0x0100 | this->reg.s), data); --this->reg.s; }
+quint8 Cpu::pop(){ ++this->reg.s; return this->readRam8(static_cast<quint16>(0x0100 | this->reg.s)); }
 quint8 Cpu::popAndSetZnFlag() { quint8 t = this->pop(); this->setZnFlag(t); return t;}
 
 void Cpu::adc(){
-    this->wt = this->r.a + this->dt + (this->r.p & Cpu::CFlag);
+    this->wt = this->reg.a + this->dt + (this->reg.p & Cpu::CFlag);
     this->testFlag(this->wt > 0xFF, Cpu::CFlag);
-    this->testFlag(((~(this->r.a ^ this->dt)) & (this->r.a ^ this->wt) & 0x80), Cpu::VFlag);
-    this->r.a = (quint8)this->wt;
-    this->setZnFlag(this->r.a);
+    this->testFlag(((~(this->reg.a ^ this->dt)) & (this->reg.a ^ this->wt) & 0x80), Cpu::VFlag);
+    this->reg.a = (quint8)this->wt;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::sbc(){
-    this->wt = this->r.a - this->dt - (~this->r.p & Cpu::CFlag);
-    this->testFlag(((this->r.a ^ this->dt) & (this->r.a ^ this->wt) & 0x80), Cpu::VFlag);
+    this->wt = this->reg.a - this->dt - (~this->reg.p & Cpu::CFlag);
+    this->testFlag(((this->reg.a ^ this->dt) & (this->reg.a ^ this->wt) & 0x80), Cpu::VFlag);
     this->testFlag(this->wt < 0x100, Cpu::CFlag);
-    this->r.a = (quint8)this->wt;
-    this->setZnFlag(this->r.a);
+    this->reg.a = (quint8)this->wt;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::inc(){
@@ -272,13 +214,13 @@ void Cpu::inc(){
 }
 
 void Cpu::inx(){
-    this->r.x++;
-    this->setZnFlag(this->r.x);
+    this->reg.x++;
+    this->setZnFlag(this->reg.x);
 }
 
 void Cpu::iny(){
-    this->r.y++;
-    this->setZnFlag(this->r.y);
+    this->reg.y++;
+    this->setZnFlag(this->reg.y);
 }
 
 void Cpu::dec(){
@@ -287,34 +229,34 @@ void Cpu::dec(){
 }
 
 void Cpu::dex(){
-    this->r.x--;
-    this->setZnFlag(this->r.x);
+    this->reg.x--;
+    this->setZnFlag(this->reg.x);
 }
 
 void Cpu::dey(){
-    this->r.y--;
-    this->setZnFlag(this->r.y);
+    this->reg.y--;
+    this->setZnFlag(this->reg.y);
 }
 
 void Cpu::_and(){
-    this->r.a &= this->dt;
-    this->setZnFlag(this->r.a);
+    this->reg.a &= this->dt;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::ora() {
-    this->r.a |= this->dt;
-    this->setZnFlag(this->r.a);
+    this->reg.a |= this->dt;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::eor(){
-    this->r.a ^= this->dt;
-    this->setZnFlag(this->r.a);
+    this->reg.a ^= this->dt;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::asla(){
-    this->testFlag(this->r.a & 0x80, Cpu::CFlag);
-    this->r.a <<= 1;
-    this->setZnFlag(this->r.a);
+    this->testFlag(this->reg.a & 0x80, Cpu::CFlag);
+    this->reg.a <<= 1;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::asl(){
@@ -324,9 +266,9 @@ void Cpu::asl(){
 }
 
 void Cpu::lsra(){
-    this->testFlag(this->r.a & 0x01, Cpu::CFlag);
-    this->r.a >>= 1;
-    this->setZnFlag(this->r.a);
+    this->testFlag(this->reg.a & 0x01, Cpu::CFlag);
+    this->reg.a >>= 1;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::lsr(){
@@ -336,18 +278,18 @@ void Cpu::lsr(){
 }
 
 void Cpu::rola(){
-    if(this->r.p & Cpu::CFlag){
-        this->testFlag(this->r.a & 0x80, Cpu::CFlag);
-        this->r.a = (this->r.a << 1) | 0x01;
+    if(this->reg.p & Cpu::CFlag){
+        this->testFlag(this->reg.a & 0x80, Cpu::CFlag);
+        this->reg.a = (this->reg.a << 1) | 0x01;
     }else{
-        this->testFlag(this->r.a & 0x80, Cpu::CFlag);
-        this->r.a <<= 1;
+        this->testFlag(this->reg.a & 0x80, Cpu::CFlag);
+        this->reg.a <<= 1;
     }
-    this->setZnFlag(this->r.a);
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::rol(){
-    if(this->r.p & Cpu::CFlag){
+    if(this->reg.p & Cpu::CFlag){
         this->testFlag(this->dt & 0x80, Cpu::CFlag);
         this->dt = (this->dt << 1) | 0x01;
     }else{
@@ -358,18 +300,18 @@ void Cpu::rol(){
 }
 
 void Cpu::rora(){
-    if(this->r.p & Cpu::CFlag){
-        this->testFlag(this->r.a & 0x01, Cpu::CFlag);
-        this->r.a = (this->r.a >> 1) | 0x80;
+    if(this->reg.p & Cpu::CFlag){
+        this->testFlag(this->reg.a & 0x01, Cpu::CFlag);
+        this->reg.a = (this->reg.a >> 1) | 0x80;
     }else{
-        this->testFlag(this->r.a & 0x01, Cpu::CFlag);
-        this->r.a >>= 1;
+        this->testFlag(this->reg.a & 0x01, Cpu::CFlag);
+        this->reg.a >>= 1;
     }
-    this->setZnFlag(this->r.a);
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::ror(){
-    if(this->r.p & Cpu::CFlag){
+    if(this->reg.p & Cpu::CFlag){
         this->testFlag(this->dt & 0x01, Cpu::CFlag);
         this->dt = (this->dt >> 1) | 0x80;
     }else{
@@ -380,228 +322,227 @@ void Cpu::ror(){
 }
 
 void Cpu::bit(){
-    this->testFlag((this->dt & this->r.a) == 0, Cpu::ZFlag);
+    this->testFlag((this->dt & this->reg.a) == 0, Cpu::ZFlag);
     this->testFlag(this->dt & 0x80, Cpu::NFlag);
     this->testFlag(this->dt & 0x40, Cpu::VFlag);
 }
 
 void Cpu::lda(){
-    this->r.a = this->dt;
-    this->setZnFlag(this->r.a);
+    this->reg.a = this->dt;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::ldx(){
-    this->r.x = this->dt;
-    this->setZnFlag(this->r.x);
+    this->reg.x = this->dt;
+    this->setZnFlag(this->reg.x);
 }
 
 void Cpu::ldy(){
-    this->r.y = this->dt;
-    this->setZnFlag(this->r.y);
+    this->reg.y = this->dt;
+    this->setZnFlag(this->reg.y);
 }
 
-void Cpu::sta(){ this->dt = this->r.a; }
+void Cpu::sta(){ this->dt = this->reg.a; }
 
-void Cpu::stx(){ this->dt = this->r.x; }
+void Cpu::stx(){ this->dt = this->reg.x; }
 
-void Cpu::sty(){ this->dt = this->r.y; }
+void Cpu::sty(){ this->dt = this->reg.y; }
 
 void Cpu::tax(){
-    this->r.x = this->r.a;
-    this->setZnFlag(this->r.x);
+    this->reg.x = this->reg.a;
+    this->setZnFlag(this->reg.x);
 }
 
 void Cpu::txa(){
-    this->r.a = this->r.x;
-    this->setZnFlag(this->r.a);
+    this->reg.a = this->reg.x;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::tay(){
-    this->r.y = this->r.a;
-    this->setZnFlag(this->r.y);
+    this->reg.y = this->reg.a;
+    this->setZnFlag(this->reg.y);
 }
 
 void Cpu::tya(){
-    this->r.a = this->r.y;
-    this->setZnFlag(this->r.a);
+    this->reg.a = this->reg.y;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::tsx(){
-    this->r.x = this->r.s;
-    this->setZnFlag(this->r.x);
+    this->reg.x = this->reg.s;
+    this->setZnFlag(this->reg.x);
 }
 
 void Cpu::txs(){
-    this->r.s = this->r.x;
+    this->reg.s = this->reg.x;
 }
 
 void Cpu::cmp(){
-    this->wt = (quint16)this->r.a - (quint16)this->dt;
+    this->wt = (quint16)this->reg.a - (quint16)this->dt;
     this->testFlag((this->wt & 0x8000) == 0, Cpu::CFlag);
     this->setZnFlag((quint8)this->wt);
 };
 
 void Cpu::cpx(){
-    this->wt = (quint16)this->r.x - (quint16)this->dt;
+    this->wt = (quint16)this->reg.x - (quint16)this->dt;
     this->testFlag((this->wt & 0x8000) == 0, Cpu::CFlag);
     this->setZnFlag((quint8)this->wt);
 }
 
 void Cpu::cpy(){
-    this->wt = (quint16)this->r.y - (quint16)this->dt;
+    this->wt = (quint16)this->reg.y - (quint16)this->dt;
     this->testFlag((this->wt & 0x8000) == 0, Cpu::CFlag);
     this->setZnFlag((quint8)this->wt);
 }
 
 void Cpu::jmpId(){
-    this->wt = this->opCpuW(this->r.pc);
-    this->ea = this->rdCpu(this->wt);
+    this->wt = this->op16(this->reg.pc);
+    this->ea = this->readRam8(this->wt);
     this->wt = (this->wt & 0xFF00) | ((this->wt + 1) & 0x00FF);
-    this->r.pc = this->ea + this->rdCpu(this->wt) * 0x100;
+    this->reg.pc = this->ea + this->readRam8(this->wt) * 0x100;
 }
 
 void Cpu::jmp(){
-    this->r.pc = this->opCpuW(this->r.pc);
+    this->reg.pc = this->op16(this->reg.pc);
 }
 
 void Cpu::jsr(){
-    this->ea = this->opCpuW(this->r.pc);
-    this->r.pc++;
-    this->push(this->r.pc >> 8);
-    this->push(this->r.pc & 0xFF);
-    this->r.pc = this->ea;
+    this->ea = this->op16(this->reg.pc);
+    this->reg.pc++;
+    this->push(this->reg.pc >> 8);
+    this->push(this->reg.pc & 0xFF);
+    this->reg.pc = this->ea;
 }
 
 void Cpu::rts(){
-    this->r.pc = this->pop();
-    this->r.pc |= this->pop() << 2;
-    this->r.pc++;
+    this->reg.pc = this->pop();
+    this->reg.pc |= static_cast<quint16>(this->pop()) << 8;
+    this->reg.pc++;
 }
 
 void Cpu::rti(){
-    this->r.p = this->pop() | Cpu::RFlag;
-    this->r.pc = this->pop();
-    this->r.pc |= this->pop() << 4;
+    this->reg.p = this->pop() | Cpu::RFlag;
+    this->reg.pc = this->pop();
+    this->reg.pc |= static_cast<quint16>(this->pop()) << 8;
 }
 
 quint8 Cpu::_nmi(){
-    this->push(this->r.pc >> 8);
-    this->push(this->r.pc & 0xFF);
+    this->push(this->reg.pc >> 8);
+    this->push(this->reg.pc & 0xFF);
     this->clearFlag(Cpu::BFlag);
-    this->push(this->r.p);
+    this->push(this->reg.p);
     this->setFlag(Cpu::IFlag);
-    this->r.pc = this->rdCpuW(Cpu::NmiVector);
+    this->reg.pc = this->readRam16(Cpu::NmiVector);
     return 7;
 }
 
 quint8 Cpu::_irq(){
-    this->push(this->r.pc >> 8);
-    this->push(this->r.pc & 0xFF);
+    this->push(this->reg.pc >> 8);
+    this->push(this->reg.pc & 0xFF);
     this->clearFlag(Cpu::BFlag);
-    this->push(this->r.p);
+    this->push(this->reg.p);
     this->setFlag(Cpu::IFlag);
-    this->r.pc = this->rdCpuW(Cpu::IrqVector);
+    this->reg.pc = this->readRam16(Cpu::IrqVector);
     return 7;
 }
 
 void Cpu::brk(){
-    this->r.pc++;
-    this->push(this->r.pc >> 8);
-    this->push(this->r.pc & 0xFF);
+    this->reg.pc++;
+    this->push(this->reg.pc >> 8);
+    this->push(this->reg.pc & 0xFF);
     this->setFlag(Cpu::BFlag);
-    this->push(this->r.p);
+    this->push(this->reg.p);
     this->setFlag(Cpu::IFlag);
-    this->r.pc = this->rdCpuW(Cpu::IrqVector);
+    this->reg.pc = this->readRam16(Cpu::IrqVector);
 }
 
 void Cpu::relJump(){
-    this->et = this->r.pc;
-    this->ea = this->r.pc + (qint8)this->dt;
-    this->r.pc = this->ea;
-    return 1;
+    this->et = this->reg.pc;
+    this->ea = this->reg.pc + (qint8)this->dt;
+    this->reg.pc = this->ea;
     this->checkEa();
 }
 
 void Cpu::bcc(){
-    if(!(this->r.p & Cpu::CFlag)){
+    if(!(this->reg.p & Cpu::CFlag)){
         this->relJump();
     }
 }
 
 void Cpu::bcs(){
-    if(this->r.p & Cpu::CFlag){
+    if(this->reg.p & Cpu::CFlag){
         this->relJump();
     }
 }
 
 void Cpu::bne(){
-    if(!(this->r.p & Cpu::ZFlag)){
-        this->relJump()
+    if(!(this->reg.p & Cpu::ZFlag)){
+            this->relJump();
     }
 }
 
 void Cpu::beq(){
-    if(this->r.p & Cpu::ZFlag){
+    if(this->reg.p & Cpu::ZFlag){
         this->relJump();
     }
 }
 
 void Cpu::bpl(){
-    if(!(this->r.p & Cpu::NFlag)){
+    if(!(this->reg.p & Cpu::NFlag)){
         this->relJump();
     }
 }
 
 void Cpu::bmi(){
-    if(this->r.p & Cpu::NFlag){
+    if(this->reg.p & Cpu::NFlag){
         this->relJump();
     }
 }
 
 void Cpu::bvc(){
-    if(!(this->r.p & Cpu::VFlag)){
+    if(!(this->reg.p & Cpu::VFlag)){
         this->relJump();
     }
 }
 
 void Cpu::bvs(){
-    if(this->r.p & Cpu::VFlag){
+    if(this->reg.p & Cpu::VFlag){
         this->relJump();
     }
 }
 
-void Cpu::clc(){ this->r.p &= ~Cpu::CFlag; }
-void Cpu::cld(){ this->r.p &= ~Cpu::DFlag; }
-void Cpu::cli(){ this->r.p &= ~Cpu::IFlag; }
-void Cpu::clv(){ this->r.p &= ~Cpu::VFlag; }
-void Cpu::sec(){ this->r.p |= Cpu::CFlag; }
-void Cpu::sed(){ this->r.p |= Cpu::DFlag; }
-void Cpu::sei(){ this->r.p |= Cpu::IFlag; }
+void Cpu::clc(){ this->reg.p &= ~Cpu::CFlag; }
+void Cpu::cld(){ this->reg.p &= ~Cpu::DFlag; }
+void Cpu::cli(){ this->reg.p &= ~Cpu::IFlag; }
+void Cpu::clv(){ this->reg.p &= ~Cpu::VFlag; }
+void Cpu::sec(){ this->reg.p |= Cpu::CFlag; }
+void Cpu::sed(){ this->reg.p |= Cpu::DFlag; }
+void Cpu::sei(){ this->reg.p |= Cpu::IFlag; }
 
 void Cpu::anc(){
-    this->r.a &= this->dt;
-    this->setZnFlag(this->r.a);
-    this->testFlag(this->r.p & Cpu::NFlag, Cpu::CFlag);
+    this->reg.a &= this->dt;
+    this->setZnFlag(this->reg.a);
+    this->testFlag(this->reg.p & Cpu::NFlag, Cpu::CFlag);
 }
 
 void Cpu::ane(){
-    this->r.a = (this->r.a | 0xEE) & this->r.x & this->dt;
-    this->setZnFlag(this->r.a);
+    this->reg.a = (this->reg.a | 0xEE) & this->reg.x & this->dt;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::arr(){
-    this->dt &= this->r.a;
-    this->r.a = (this->dt >> 1) | ((this->r.p & Cpu::CFlag) << 7);
-    this->setZnFlag(this->r.a);
-    this->testFlag(this->r.a & 0x40, Cpu::CFlag);
-    this->testFlag((this->r.a >> 6) ^ (this->r.a >> 5), Cpu::VFlag);
+    this->dt &= this->reg.a;
+    this->reg.a = (this->dt >> 1) | ((this->reg.p & Cpu::CFlag) << 7);
+    this->setZnFlag(this->reg.a);
+    this->testFlag(this->reg.a & 0x40, Cpu::CFlag);
+    this->testFlag((this->reg.a >> 6) ^ (this->reg.a >> 5), Cpu::VFlag);
 }
 
 void Cpu::asr(){
-    this->dt &= this->r.a;
+    this->dt &= this->reg.a;
     this->testFlag(this->dt & 0x01, Cpu::CFlag);
-    this->r.a = this->dt >> 1;
-    this->setZnFlag(this->r.a);
+    this->reg.a = this->dt >> 1;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::dcp(){
@@ -615,38 +556,38 @@ void Cpu::isb(){
 }
 
 void Cpu::las(){
-    this->r.s = this->r.s & this->dt;
-    this->r.x = this->r.s;
-    this->r.a = this->r.s;
-    this->setZnFlag(this->r.a);
+    this->reg.s = this->reg.s & this->dt;
+    this->reg.x = this->reg.s;
+    this->reg.a = this->reg.s;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::lax(){
-    this->r.a = this->dt;
-    this->r.x = this->r.a;
-    this->setZnFlag(this->r.a);
+    this->reg.a = this->dt;
+    this->reg.x = this->reg.a;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::lxa(){
-    this->r.x = ((this->r.a | 0xEE) & this->dt);
-    this->r.a = this->r.x;
-    this->setZnFlag(this->r.a);
+    this->reg.x = ((this->reg.a | 0xEE) & this->dt);
+    this->reg.a = this->reg.x;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::rla(){
-    if(this->r.p & Cpu::CFlag){
+    if(this->reg.p & Cpu::CFlag){
         this->testFlag(this->dt & 0x80, Cpu::CFlag);
         this->dt = (this->dt << 1) | 1;
     }else{
         this->testFlag(this->dt & 0x80, Cpu::CFlag);
         this->dt <<= 1;
     }
-    this->r.a &= this->dt;
-    this->setZnFlag(this->r.a);
+    this->reg.a &= this->dt;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::rra(){
-    if(this->r.p & Cpu::CFlag){
+    if(this->reg.p & Cpu::CFlag){
         this->testFlag(this->dt & 0x01, Cpu::CFlag);
         this->dt = (this->dt >> 1) | 0x80;
     }else{
@@ -656,53 +597,53 @@ void Cpu::rra(){
     this->adc();
 }
 
-void Cpu::sax(){ this->dt = this->r.a & this->r.x; }
+void Cpu::sax(){ this->dt = this->reg.a & this->reg.x; }
 
 void Cpu::sbx(){
-    this->wt = (this->r.a & this->r.x) - this->dt;
+    this->wt = (this->reg.a & this->reg.x) - this->dt;
     this->testFlag(this->wt < 0x100, Cpu::CFlag);
-    this->r.x = this->wt & 0xFF;
-    this->setZnFlag(this->r.x);
+    this->reg.x = this->wt & 0xFF;
+    this->setZnFlag(this->reg.x);
 }
 
 void Cpu::sha(){
-    this->dt = this->r.a & this->r.x & (quint8)((this->ea >> 8) + 1);
+    this->dt = this->reg.a & this->reg.x & (quint8)((this->ea >> 8) + 1);
 }
 
 void Cpu::shs(){
-    this->r.s = this->r.a & this->r.x;
-    this->dt = this->r.s & (quint8)((this->ea >> 8) + 1);
+    this->reg.s = this->reg.a & this->reg.x;
+    this->dt = this->reg.s & (quint8)((this->ea >> 8) + 1);
 }
 
 void Cpu::shx(){
-    this->dt = this->r.x & (quint8)((this->ea >> 8) + 1);
+    this->dt = this->reg.x & (quint8)((this->ea >> 8) + 1);
 }
 
 void Cpu::shy(){
-    this->dt = this->r.y & (quint8)((this->ea >> 8) + 1);
+    this->dt = this->reg.y & (quint8)((this->ea >> 8) + 1);
 }
 
 void Cpu::slo(){
     this->testFlag(this->dt & 0x80, Cpu::CFlag);
     this->dt <<= 1;
-    this->r.a |= this->dt;
-    this->setZnFlag(this->r.a);
+    this->reg.a |= this->dt;
+    this->setZnFlag(this->reg.a);
 }
 
 void Cpu::sre(){
     this->testFlag(this->dt & 0x01, Cpu::CFlag);
     this->dt >>= 1;
-    this->r.a ^= this->dt;
-    this->setZnFlag(this->r.a);
+    this->reg.a ^= this->dt;
+    this->setZnFlag(this->reg.a);
 }
 
 quint8 Cpu::BRKREL(){               this->brk();                   return 7; } // 0x00
 quint8 Cpu::ORAIZX(){ this->mrIx(); this->ora();                   return 6; } // 0x01
 quint8 Cpu::SLOIZX(){ this->mrIx(); this->slo();  this->mwEa();    return 8; } // 0x03
 quint8 Cpu::ORAZP_(){ this->mrZp(); this->ora();                   return 3; } // 0x05
-quint8 Cpu::ASLZP_(){ this->mrZp(); this->slo();  this->mwZp();    return 5; } // 0x06
+quint8 Cpu::ASLZP_(){ this->mrZp(); this->asl();  this->mwZp();    return 5; } // 0x06
 quint8 Cpu::SLOZP_(){ this->mrZp(); this->slo();  this->mwZp();    return 5; } // 0x07
-quint8 Cpu::PHPREL(){ this->push(this->r.p | Cpu::BFlag);          return 3; } // 0x08
+quint8 Cpu::PHPREL(){ this->push(this->reg.p | Cpu::BFlag);          return 3; } // 0x08
 quint8 Cpu::ORAIMM(){ this->mrIm(); this->ora();                   return 2; } // 0x09
 quint8 Cpu::ASLAAA(){               this->asla();                  return 2; } // 0x0A
 quint8 Cpu::ANCIMM(){ this->mrIm(); this->anc();                   return 2; } // 0x0B, 0x2B
@@ -728,7 +669,7 @@ quint8 Cpu::BITZP_(){ this->mrZp(); this->bit();                   return 3; } /
 quint8 Cpu::ANDZP_(){ this->mrZp(); this->_and();                  return 3; } // 0x25
 quint8 Cpu::ROLZP_(){ this->mrZp(); this->rol();  this->mwZp();    return 5; } // 0x26
 quint8 Cpu::RLAZP_(){ this->mrZp(); this->rla();  this->mwZp();    return 5; } // 0x27
-quint8 Cpu::PLPREL(){ this->r.p = this->pop() | Cpu::RFlag;        return 4; } // 0x28
+quint8 Cpu::PLPREL(){ this->reg.p = this->pop() | Cpu::RFlag;        return 4; } // 0x28
 quint8 Cpu::ANDIMM(){ this->mrIm(); this->_and();                  return 2; } // 0x29
 quint8 Cpu::ROLAAA(){               this->rola();                  return 2; } // 0x2A
 quint8 Cpu::BITABS(){ this->mrAb(); this->bit();                   return 4; } // 0x2C
@@ -745,7 +686,7 @@ quint8 Cpu::SECREL(){               this->sec();                   return 2; } /
 quint8 Cpu::ANDABY(){ this->mrAy(); this->_and(); return this->checkEa() +4; } // 0x39
 quint8 Cpu::RLAABY(){ this->mrAy(); this->rla();  this->mwEa();    return 7; } // 0x3B
 quint8 Cpu::ANDABX(){ this->mrAx(); this->_and(); return this->checkEa() +4; } // 0x3D
-quint8 Cpu::ROLABX(){ this->mrAb(); this->rol();  this->mwEa();    return 7; } // 0x3E
+quint8 Cpu::ROLABX(){ this->mrAx(); this->rol();  this->mwEa();    return 7; } // 0x3E
 quint8 Cpu::RLAABX(){ this->mrAx(); this->rla();  this->mwEa();    return 7; } // 0x3F
 quint8 Cpu::RTIREL(){               this->rti();                   return 6; } // 0x40
 quint8 Cpu::EORIZX(){ this->mrIx(); this->eor();                   return 6; } // 0x41
@@ -753,7 +694,7 @@ quint8 Cpu::SREIZX(){ this->mrIx(); this->sre();  this->mwEa();    return 8; } /
 quint8 Cpu::EORZP_(){ this->mrZp(); this->eor();                   return 3; } // 0x45
 quint8 Cpu::LSRZP_(){ this->mrZp(); this->lsr();  this->mwZp();    return 5; } // 0x46
 quint8 Cpu::SREZP_(){ this->mrZp(); this->sre();  this->mwZp();    return 5; } // 0x47
-quint8 Cpu::PHAREL(){ this->push(this->r.a);                       return 3; } // 0x48
+quint8 Cpu::PHAREL(){ this->push(this->reg.a);                       return 3; } // 0x48
 quint8 Cpu::EORIMM(){ this->mrIm(); this->eor();                   return 2; } // 0x49
 quint8 Cpu::LSRAAA(){               this->lsra();                  return 2; } // 0x4A
 quint8 Cpu::ASRIMM(){ this->mrIm(); this->asr();                   return 2; } // 0x4B
@@ -779,7 +720,7 @@ quint8 Cpu::RRAIZX(){ this->mrIx(); this->rra();  this->mwEa();    return 8; } /
 quint8 Cpu::ADCZP_(){ this->mrZp(); this->adc();                   return 3; } // 0x65
 quint8 Cpu::RORZP_(){ this->mrZp(); this->ror();  this->mwZp();    return 5; } // 0x66
 quint8 Cpu::RRAZP_(){ this->mrZp(); this->rra();  this->mwZp();    return 5; } // 0x67
-quint8 Cpu::PLAREL(){ this->r.a = this->popAndSetZnFlag();         return 4; } // 0x68
+quint8 Cpu::PLAREL(){ this->reg.a = this->popAndSetZnFlag();         return 4; } // 0x68
 quint8 Cpu::ADCIMM(){ this->mrIm(); this->adc();                   return 2; } // 0x69
 quint8 Cpu::RORAAA(){               this->rora();                  return 2; } // 0x6A
 quint8 Cpu::ARRIMM(){ this->mrIm(); this->arr();                   return 2; } // 0x6B
@@ -911,163 +852,80 @@ quint8 Cpu::SBCABX(){ this->mrAx(); this->sbc();  return this->checkEa() +4; } /
 quint8 Cpu::INCABX(){ this->mrAx(); this->inc();  this->mwEa();    return 7; } // 0xFE
 quint8 Cpu::ISBABX(){ this->mrAx(); this->isb();  this->mwEa();    return 5; } // 0xFF
 quint8 Cpu::NOPREL(){                                              return 2; } // 0x1A, 0x3A, 0x5A, 0x7A, 0xDA, 0xFA
-quint8 Cpu::DOP__2(){ r.pc++;                                      return 2; } // 0x80, 0x82, 0x89, 0xC2, 0xE2
-quint8 Cpu::DOP__3(){ r.pc++;                                      return 3; } // 0x04, 0x44, 0x64
-quint8 Cpu::DOP__4(){ r.pc++;                                      return 4; } // 0x14, 0x34, 0x54, 0x74, 0xD4, 0xF4
-quint8 Cpu::TOPREL(){ r.pc++; r.pc++;                              return 4; } // 0x0C, 0x1C, 0x3C, 0x5C, 0x7C, 0xDC, 0xFC
-quint8 Cpu::KILLED(){ this->cpuKilled();                           return 0; } // 0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xB2, 0xD2, 0xF2
+quint8 Cpu::DOP__2(){ reg.pc++;                                      return 2; } // 0x80, 0x82, 0x89, 0xC2, 0xE2
+quint8 Cpu::DOP__3(){ reg.pc++;                                      return 3; } // 0x04, 0x44, 0x64
+quint8 Cpu::DOP__4(){ reg.pc++;                                      return 4; } // 0x14, 0x34, 0x54, 0x74, 0xD4, 0xF4
+quint8 Cpu::TOPREL(){ reg.pc++; reg.pc++;                              return 4; } // 0x0C, 0x1C, 0x3C, 0x5C, 0x7C, 0xDC, 0xFC
+quint8 Cpu::KILLED(){ this->reg.pc--; return 1; } // 0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xB2, 0xD2, 0xF2
 
-
-// Construct Function
-// TODO
-
-quint8 Cpu::rdCpu(quint16 addr) {
-    if(addr < 0x2000){
-        // RAM (Mirror $0800, $1000, $1800)
-        return mmu->getRam()[addr & 0x07FF];
-    }else if(addr < 0x8000){
-        // others
-        return this->nes->read(addr);
-    }else{
-        // dummy access
-        this->mapper->read(addr, mmu->getCpuMemBank()[addr >> 13][addr & 0x1FFF]);
-    }
-    return mmu->getCpuMemBank()[addr >> 13][addr & 0x1FFF];
-}
-
-void Cpu::wrCpu(quint16 addr, quint8 data) {
-    if(addr < 0x2000){
-        // RAM mirror ($0000, $1000, $1800)
-        mmu->getRam()[addr & 0x07FF] = data;
-    }else{
-        // other
-        this->nes->write(addr, data);
-    }
-}
-
-quint16 Cpu::rdCpuW(quint16 addr) {
-    if(addr < 0x2000){
-        // RAM (Mirror $0800, $1000, $1800)
-        return *((quint16*) &mmu->getRam()[addr & 0x07FF]);
-    }else if(addr < 0x8000){
-        // others
-        return (quint16)this->nes->read(addr) + (quint16)this->nes->read(addr + 1) * 0x100;
-    }
-    // quick bank read
-    return *((quint16*) &mmu->getCpuMemBank()[addr >> 13][addr & 0x1FFF]);
-}
 
 void Cpu::reset(){
-    this->apu = nes->apu;
-    this->mapper = nes->mapper;
-
-    this->r.a = 0x00;
-    this->r.x = 0x00;
-    this->r.y = 0x00;
-    this->r.s = 0x00;
-    this->r.p = Cpu::ZFlag | Cpu::RFlag;
-    this->r.pc = this->rdCpuW(Cpu::ResVector);
-
-    this->r.intPending = 0;
+    this->reg.a = 0x00;
+    this->reg.x = 0x00;
+    this->reg.y = 0x00;
+    this->reg.s = 0xFF;
+    this->reg.p = Cpu::ZFlag | Cpu::RFlag;
+    this->reg.pc = this->readRam16(Cpu::ResVector);
+    this->reg.intPending = CpuInterrupt::None;
 
     this->totalCycles = 0;
     this->dmaCycles = 0;
 
-    // stack quick access
-    this->stack = &mmu->getRam()[0x100];
-
-    // zero/negative flag
     this->znTable[0] = Cpu::ZFlag;
-    for(int i = 1; i < 256; i++){
+    for (quint16 i = 1; i < 256; ++i) {
         this->znTable[i] = (i & 0x80) ? Cpu::NFlag : 0;
     }
 }
 
 // interrupt
 void Cpu::nmi(){
-    this->r.intPending |= Cpu::NmiFlag;
-    this->nmiCount = 0;
+    this->reg.intPending = static_cast<CpuInterrupt>(this->reg.intPending | Cpu::NmiFlag);
 }
 
 void Cpu::setIrq(quint8 mask) {
-    this->r.intPending |= mask;
+    this->reg.intPending = static_cast<CpuInterrupt>(this->reg.intPending | mask);
 }
 
 void Cpu::clearIrq(quint8 mask) {
-    this->r.intPending &= ~mask;
+    this->reg.intPending = static_cast<CpuInterrupt>(this->reg.intPending & ~mask);
 }
 
-void Cpu::dma(qint32 cycles) {
+void Cpu::dma(quint64 cycles) {
     this->dmaCycles += cycles;
 }
 
-// execution
-quint32 Cpu::exec(quint32 requestCycles) {
-    quint32 execCycles = 0;
-    quint32 oldCycles = this->totalCycles;
-    bool clockProcess = this->clockProcess;
-
-    while(requestCycles > 0){
-        execCycles = 0;
+quint64 Cpu::exec(quint64 requestCycles) {
+    const quint64 oldCycles = this->totalCycles;
+    while (requestCycles > 0) {
         if(this->dmaCycles){
             if(requestCycles <= this->dmaCycles){
                 this->dmaCycles -= requestCycles;
                 this->totalCycles += requestCycles;
-
-                // clock synchronization
-                this->mapper->clock(requestCycles);
-
-                if(clockProcess){
-                    this->nes->clock(requestCycles);
-                }
-
-                // todo: GOTO execute_exit
                 break;
             }else{
-                execCycles += this->dmaCycles;
+                requestCycles -= this->dmaCycles;
+                this->totalCycles += this->dmaCycles;
                 this->dmaCycles = 0;
             }
         }
 
-        quint8 nmi_request = 0;
-        quint8 irq_request = 0;
-        quint8 opcode = this->opCpu(this->r.pc++);
-
-        if(this->r.intPending){
-            if(this->r.intPending & Cpu::NmiFlag){
-                nmi_request = 0xFF;
-                this->r.intPending &= ~Cpu::NmiFlag;
-            }else if(this->r.intPending & Cpu::IrqMask){
-                this->r.intPending &= ~Cpu::IrqTrigger2;
-                if(!(this->r.p & Cpu::IFlag) && opcode != 0x40){
-                    irq_request = 0xFF;
-                    this->r.intPending &= ~Cpu::IrqTrigger;
-                }
-            }
-        }
-        execCycles += this->operations[opcode]();
-        if(nmi_request){
-            this->_nmi();
-        }else if(irq_request){
-            this->_irq();
-        }
-
-        requestCycles -= execCycles;
-        totalCycles += execCycles;
-
-        // clock sync
-        this->mapper->clock(execCycles);
-#if DPCM_SYNCCLOCK
-        this->apu->syncDpcm(execCycles);
-#endif
-        if(clockProcess){
-            this->nes->clock(execCycles);
+        const quint8 opcode = this->op8(this->reg.pc++);
+        const quint64 instructionCycles = (this->*this->operations[opcode])();
+        this->totalCycles += instructionCycles;
+        if (instructionCycles > requestCycles) {
+            requestCycles = 0;
+        } else {
+            requestCycles -= instructionCycles;
         }
     }
-
-#if !DPCM_SYNCCLOCK
-    this->apu->syncDpcm(totalCycles - oldCycles);
-#endif
-
-    return totalCycles - oldCycles;
+    return this->totalCycles - oldCycles;
 }
+
+quint64 Cpu::getDmaCycles() const { return this->dmaCycles; }
+
+void Cpu::setDmaCycles(quint64 value) { this->dmaCycles = value; }
+
+quint64 Cpu::getTotalCycles() const { return this->totalCycles; }
+
+void Cpu::setTotalCycles(quint64 value) { this->totalCycles = value; }
+

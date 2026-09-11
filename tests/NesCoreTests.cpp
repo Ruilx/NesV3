@@ -1,4 +1,5 @@
 #include "Cartridge.h"
+#include "Cpu.h"
 #include "NesClock.h"
 #include "Ram.h"
 
@@ -183,6 +184,68 @@ void testNesClockRatio() {
     check(clock.ppuTicks() == 9, "clock should retain total PPU tick count");
     check(clock.cpuCycles() == 3, "nine PPU ticks should produce three CPU cycles");
 }
+
+void testCpuBasicExecution() {
+    Cpu cpu;
+    Ram programRam(0x8000);
+    RamBusDevice programDevice(programRam);
+    const Bus::Mapping programMapping{
+        .start = 0x8000,
+        .end = 0xFFFF,
+        .priority = 0,
+        .flags = AccessFlags::Readable | AccessFlags::Writable | AccessFlags::Executable,
+        .name = QStringLiteral("Test program"),
+        .device = &programDevice,
+        .translate = [](quint16 address) {
+            return static_cast<quint16>(address - 0x8000);
+        },
+    };
+    check(cpu.bus().registerMapping(programMapping) != 0, "CPU test program mapping should register");
+
+    programRam.setU8(0x7FFC, 0x00);
+    programRam.setU8(0x7FFD, 0x80);
+    programRam.setU8(0x0000, 0xA9); // LDA #$42
+    programRam.setU8(0x0001, 0x42);
+    programRam.setU8(0x0002, 0xAA); // TAX
+    programRam.setU8(0x0003, 0xE8); // INX
+    programRam.setU8(0x0004, 0x8D); // STA $0200
+    programRam.setU8(0x0005, 0x00);
+    programRam.setU8(0x0006, 0x02);
+
+    cpu.reset();
+    Cpu::CpuReg registers{};
+    cpu.getContent(registers);
+    check(registers.pc == 0x8000, "CPU reset should load the reset vector");
+
+    check(cpu.exec(10) == 10, "CPU should report the executed instruction cycles");
+    cpu.getContent(registers);
+    check(registers.a == 0x42, "LDA should load the accumulator");
+    check(registers.x == 0x43, "TAX and INX should update X");
+    check((registers.p & (Cpu::ZFlag | Cpu::NFlag)) == 0,
+          "positive non-zero loads should clear zero and negative flags");
+    check(cpu.readRam8(0x0200) == 0x42, "STA should write through the CPU bus");
+    check(registers.pc == 0x8007, "CPU should advance the program counter");
+
+    programRam.setU8(0x0000, 0x20); // JSR $8006
+    programRam.setU8(0x0001, 0x06);
+    programRam.setU8(0x0002, 0x80);
+    programRam.setU8(0x0003, 0xA9); // LDA #$55 after RTS
+    programRam.setU8(0x0004, 0x55);
+    programRam.setU8(0x0006, 0xA9); // subroutine: LDA #$AA
+    programRam.setU8(0x0007, 0xAA);
+    programRam.setU8(0x0008, 0x60); // RTS
+
+    cpu.reset();
+    check(cpu.exec(14) == 14, "JSR, subroutine LDA and RTS should consume 14 cycles");
+    cpu.getContent(registers);
+    check(registers.a == 0xAA, "subroutine should execute before returning");
+    check(registers.pc == 0x8003, "RTS should return to the instruction after JSR");
+    check(registers.s == 0xFF, "RTS should restore the stack pointer");
+
+    check(cpu.exec(2) == 2, "returned code should continue executing");
+    cpu.getContent(registers);
+    check(registers.a == 0x55, "execution should continue after RTS");
+}
 }
 
 int main() {
@@ -193,6 +256,7 @@ int main() {
     testCpuPpuBusIsolation();
     testBusRejectsOverlappingMappings();
     testNesClockRatio();
+    testCpuBasicExecution();
     std::cout << "NesCoreTests passed\n";
     return EXIT_SUCCESS;
 }

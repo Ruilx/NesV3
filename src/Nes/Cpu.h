@@ -5,12 +5,6 @@
 #include "Bus.h"
 #include "Ram.h"
 
-class Nes;
-
-class Apu;
-
-class Mapper;
-
 class Ram;
 
 class Cpu : public QObject {
@@ -19,24 +13,14 @@ Q_OBJECT
     Bus cpuBus;
     Ram internalRam;
     RamBusDevice internalRamDevice;
-    Nes *nes = nullptr;
-    Apu *apu = nullptr;
-    Mapper *mapper = nullptr;
-
     quint64 totalCycles = 0;
     quint64 dmaCycles = 0;
-
-    // stack
-    Ram *stack = nullptr;
-    quint16 stack_offset = 0x0100;
 
     // zero & negative table
     quint8 znTable[256] = {0};
 
     // clock process
     bool clockProcess = false;
-
-    quint32 nmiCount = 0;
 
 public:
     Q_FLAGS(CpuFlags)
@@ -84,8 +68,8 @@ private:
     quint16 wt;
     quint8 dt;
 
-    inline quint8 op8(quint16 addr);
-    inline quint16 op16(quint16 addr);
+    quint8 op8(quint16 addr);
+    quint16 op16(quint16 addr);
 
     CpuReg reg = {
             .pc = 0x0000,
@@ -98,7 +82,7 @@ private:
     };
 
 public:
-    explicit Cpu(Nes *nes, QObject *parent = nullptr);
+    explicit Cpu(QObject *parent = nullptr);
 
     ~Cpu() override = default;
 
@@ -142,325 +126,325 @@ public:
 private:
     // op part
     // zero page read
-    inline quint8 zeroPageRead(quint8 addr);
+    quint8 zeroPageRead(quint8 addr);
 
-    inline quint16 zeroPageReadW(quint8 addr);
+    quint16 zeroPageReadW(quint8 addr);
 
     // zero page write
-    inline void zeroPageWrite(quint8 addr, quint8 value);
+    void zeroPageWrite(quint8 addr, quint8 value);
 
-    inline void zeroPageWriteW(quint8 addr, quint16 value);
+    void zeroPageWriteW(quint8 addr, quint16 value);
 
     // effective address page boundary beyond check
-    inline quint8 checkEa() const;
+    quint8 checkEa() const;
 
     // flag operation
     // check the setting of the zero / negative flag
-    inline void setZnFlag(quint8 flag);
+    void setZnFlag(quint8 flag);
 
-    inline void setFlag(quint8 flag);
+    void setFlag(quint8 flag);
 
-    inline void clearFlag(quint8 flag);
+    void clearFlag(quint8 flag);
 
-    inline void testFlag(bool ok, quint8 flag);
+    void testFlag(bool ok, quint8 flag);
 
-    inline bool checkFlag(quint8 flag) const;
+    bool checkFlag(quint8 flag) const;
 
     // WT: word temp
     // EA: effective address
     // ET: effective address temp
     // DT: data
-    inline void mrIm();
+    void mrIm();
 
-    inline void mrZp();
+    void mrZp();
 
-    inline void mrZx();
+    void mrZx();
 
-    inline void mrZy();
+    void mrZy();
 
-    inline void mrAb();
+    void mrAb();
 
-    inline void mrAx();
+    void mrAx();
 
-    inline void mrAy();
+    void mrAy();
 
-    inline void mrIx();
+    void mrIx();
 
-    inline void mrIy();
+    void mrIy();
 
     // effective address
-    inline void eaZp();
+    void eaZp();
 
-    inline void eaZx();
+    void eaZx();
 
-    inline void eaZy();
+    void eaZy();
 
-    inline void eaAb();
+    void eaAb();
 
-    inline void eaAx();
+    void eaAx();
 
-    inline void eaAy();
+    void eaAy();
 
-    inline void eaIx();
+    void eaIx();
 
-    inline void eaIy();
+    void eaIy();
 
     // memory write
-    inline void mwZp();
+    void mwZp();
 
-    inline void mwEa();
+    void mwEa();
 
     // stack operations
-    inline void push(quint8 data);
+    void push(quint8 data);
 
-    inline quint8 pop();
+    quint8 pop();
 
     // pop & set zn flag
-    inline quint8 popAndSetZnFlag();
+    quint8 popAndSetZnFlag();
 
     // arithmetic operations
     // flags(NVRBDIZC)
     // ADC  (NV----ZC)
-    inline void adc();
+    void adc();
 
     // SBC  (NV----ZC)
-    inline void sbc();
+    void sbc();
 
     // INC  (N-----Z-)
-    inline void inc();
+    void inc();
 
     // INX  (N-----Z-)
-    inline void inx();
+    void inx();
 
     // INY  (N-----Z-)
-    inline void iny();
+    void iny();
 
     // DEC  (N-----Z-)
-    inline void dec();
+    void dec();
 
     // DEX  (N-----Z-)
-    inline void dex();
+    void dex();
 
     // DEY  (N-----Z-)
-    inline void dey();
+    void dey();
 
     // Logical operations
     // AND  (N-----Z-)
-    inline void _and();
+    void _and();
 
     // ORA  (N-----Z-)
-    inline void ora();
+    void ora();
 
     // EOR  (N-----Z-)
-    inline void eor();
+    void eor();
 
     // ASLA (N-----ZC)
-    inline void asla();
+    void asla();
 
     // ASL  (N-----ZC)
-    inline void asl();
+    void asl();
 
     // LSRA (N-----ZC)
-    inline void lsra();
+    void lsra();
 
     // LSR  (N-----ZC)
-    inline void lsr();
+    void lsr();
 
     // ROLA (N-----ZC)
-    inline void rola();
+    void rola();
 
     // ROL  (N-----ZC)
-    inline void rol();
+    void rol();
 
     // RORA (N-----ZC)
-    inline void rora();
+    void rora();
 
     // ROR  (N-----ZC)
-    inline void ror();
+    void ror();
 
     // BIT  (NV----Z-)
-    inline void bit();
+    void bit();
 
     // Load / store operations
     // LDA  (N-----Z-)
-    inline void lda();
+    void lda();
 
     // LDX  (N-----Z-)
-    inline void ldx();
+    void ldx();
 
     // LDY  (N-----Z-)
-    inline void ldy();
+    void ldy();
 
     // STA  (--------)
-    inline void sta();
+    void sta();
 
     // STX  (--------)
-    inline void stx();
+    void stx();
 
     // STY  (--------)
-    inline void sty();
+    void sty();
 
     // TAX  (N-----Z-)
-    inline void tax();
+    void tax();
 
     // TXA  (N-----Z-)
-    inline void txa();
+    void txa();
 
     // TAY  (N-----Z-)
-    inline void tay();
+    void tay();
 
     // TYA  (N-----Z-)
-    inline void tya();
+    void tya();
 
     // TSX  (N-----Z-)
-    inline void tsx();
+    void tsx();
 
     // TXS  (--------)
-    inline void txs();
+    void txs();
 
     // Compare operations
     // CMP  (N-----ZC)
-    inline void cmp();
+    void cmp();
 
     // CPX  (N-----ZC)
-    inline void cpx();
+    void cpx();
 
     // CPY  (N-----ZC)
-    inline void cpy();
+    void cpy();
 
     // Jump / return operations
     // JMP_ID
-    inline void jmpId();
+    void jmpId();
 
     // JMP
-    inline void jmp();
+    void jmp();
 
     // JSR
-    inline void jsr();
+    void jsr();
 
     // RTS
-    inline void rts();
+    void rts();
 
     // RTI
-    inline void rti();
+    void rti();
 
     // _NMI
-    inline quint8 _nmi();
+    quint8 _nmi();
 
     // _IRQ
-    inline quint8 _irq();
+    quint8 _irq();
 
     // BRK
-    inline void brk();
+    void brk();
 
     // REL_JUMP
-    inline void relJump();
+    void relJump();
 
     // BCC
-    inline void bcc();
+    void bcc();
 
     // BCS
-    inline void bcs();
+    void bcs();
 
     // BNE
-    inline void bne();
+    void bne();
 
     // BEQ
-    inline void beq();
+    void beq();
 
     // BPL
-    inline void bpl();
+    void bpl();
 
     // BMI
-    inline void bmi();
+    void bmi();
 
     // BVC
-    inline void bvc();
+    void bvc();
 
     // BVS
-    inline void bvs();
+    void bvs();
 
     // Flag control operations
     // CLC
-    inline void clc();
+    void clc();
 
     // CLD
-    inline void cld();
+    void cld();
 
     // CLI
-    inline void cli();
+    void cli();
 
     // CLV
-    inline void clv();
+    void clv();
 
     // SEC
-    inline void sec();
+    void sec();
 
     // SED
-    inline void sed();
+    void sed();
 
     // SEI
-    inline void sei();
+    void sei();
 
     // Unofficial operations
     // ANC
-    inline void anc();
+    void anc();
 
     // ANE
-    inline void ane();
+    void ane();
 
     // ARR
-    inline void arr();
+    void arr();
 
     // ASR
-    inline void asr();
+    void asr();
 
     // DCP
-    inline void dcp();
+    void dcp();
 
 //    // DOP
 //    inline void dop();
     // ISB
-    inline void isb();
+    void isb();
 
     // LAS
-    inline void las();
+    void las();
 
     // LAX
-    inline void lax();
+    void lax();
 
     // LXA
-    inline void lxa();
+    void lxa();
 
     // RLA
-    inline void rla();
+    void rla();
 
     // RRA
-    inline void rra();
+    void rra();
 
     // SAX
-    inline void sax();
+    void sax();
 
     // SBX
-    inline void sbx();
+    void sbx();
 
     // SHA
-    inline void sha();
+    void sha();
 
     // SHS
-    inline void shs();
+    void shs();
 
     // SHX
-    inline void shx();
+    void shx();
 
     // SHY
-    inline void shy();
+    void shy();
 
     // SLO
-    inline void slo();
+    void slo();
 
     // SRE
-    inline void sre();
+    void sre();
 //    // TOP
 //    inline void top();
 
