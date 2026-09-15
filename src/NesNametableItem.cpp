@@ -35,15 +35,28 @@ void NesNametableItem::setSubpalette(const QVector<quint8> &subpalette) {
 }
 
 void NesNametableItem::setTilePixels(int tileX, int tileY, const QVector<quint8> &tilePixels) {
+	setTilePixels(tileX, tileY, tilePixels, this->subpalette);
+}
+
+void NesNametableItem::setTilePixels(
+        int tileX,
+        int tileY,
+        const QVector<quint8> &tilePixels,
+        const QVector<quint8> &tileSubpalette) {
     if (tileX < 0 || tileX >= Width / 8 || tileY < 0 || tileY >= Height / 8) {
         return;
     }
+	if (tileSubpalette.size() != 4) {
+		return;
+	}
 
     for (int y = 0; y < 8; ++y) {
         for (int x = 0; x < 8; ++x) {
             const int sourceIndex = y * 8 + x;
             const int destinationIndex = (tileY * 8 + y) * Width + tileX * 8 + x;
             this->pixels[destinationIndex] = tilePixels.value(sourceIndex, 0);
+			this->colorIndices[destinationIndex] = tileSubpalette.value(
+					this->pixels[destinationIndex], tileSubpalette.value(0));
         }
     }
 
@@ -51,7 +64,7 @@ void NesNametableItem::setTilePixels(int tileX, int tileY, const QVector<quint8>
         for (int x = 0; x < 8; ++x) {
             const int index = (tileY * 8 + y) * Width + tileX * 8 + x;
             this->image.setPixelColor(tileX * 8 + x, tileY * 8 + y,
-                                      this->palette.colorAt(this->subpalette.value(this->pixels[index], 0)));
+							this->palette.colorAt(this->colorIndices[index]));
         }
     }
 
@@ -63,7 +76,7 @@ void NesNametableItem::rebuildImage() {
         for (int x = 0; x < Width; ++x) {
             const int index = y * Width + x;
             this->image.setPixelColor(x, y,
-                                      this->palette.colorAt(this->subpalette.value(this->pixels[index], 0)));
+							this->palette.colorAt(this->colorIndices[index]));
         }
     }
 }

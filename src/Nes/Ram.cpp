@@ -36,6 +36,10 @@ Ram::Ram(size_t size, quint8 initValue)
     }
 }
 
+void Ram::resize(size_t size, quint8 initValue) {
+    this->ram = QByteArray(static_cast<qsizetype>(size), static_cast<char>(initValue));
+}
+
 void Ram::checkAddr(qsizetype address, qsizetype bytes) const {
     if (address < 0 || bytes <= 0 || address > this->ram.size() - bytes) {
         throw OutOfRangeError(QString("Ram address out of range: %1 to %2")

@@ -8,6 +8,7 @@
 class Nes {
 public:
     Nes();
+    explicit Nes(NesClock::TimingProfile timing);
 
     Nes(const Nes &) = delete;
     Nes &operator=(const Nes &) = delete;
@@ -20,6 +21,8 @@ public:
     [[nodiscard]] const Cartridge &cartridge() const;
     [[nodiscard]] NesClock &clock();
     [[nodiscard]] const NesClock &clock() const;
+    void runMasterTicks(quint64 ticks);
+    void runFrame();
 
 private:
     Cpu cpuComponent;

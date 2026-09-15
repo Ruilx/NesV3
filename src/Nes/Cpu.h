@@ -67,9 +67,11 @@ private:
     quint16 et;
     quint16 wt;
     quint8 dt;
+    quint8 instructionCyclesRemaining = 0;
 
     quint8 op8(quint16 addr);
     quint16 op16(quint16 addr);
+    quint8 executeInstruction();
 
     CpuReg reg = {
             .pc = 0x0000,
@@ -105,6 +107,10 @@ public:
     void dma(quint64 cycles);
 
     quint64 exec(quint64 reqCycles);
+
+    quint8 stepInstruction();
+
+    void tickCpuCycle();
 
     quint64 getDmaCycles() const;
 
@@ -338,31 +344,31 @@ private:
     void brk();
 
     // REL_JUMP
-    void relJump();
+    quint8 relJump();
 
     // BCC
-    void bcc();
+    quint8 bcc();
 
     // BCS
-    void bcs();
+    quint8 bcs();
 
     // BNE
-    void bne();
+    quint8 bne();
 
     // BEQ
-    void beq();
+    quint8 beq();
 
     // BPL
-    void bpl();
+    quint8 bpl();
 
     // BMI
-    void bmi();
+    quint8 bmi();
 
     // BVC
-    void bvc();
+    quint8 bvc();
 
     // BVS
-    void bvs();
+    quint8 bvs();
 
     // Flag control operations
     // CLC

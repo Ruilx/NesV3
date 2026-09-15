@@ -9,6 +9,7 @@
 #include "NesPalette.h"
 
 class NesNametableItem;
+class Ppu;
 
 class NesScene : public QGraphicsScene {
     Q_OBJECT
@@ -25,6 +26,13 @@ public:
     explicit NesScene(QObject *parent = nullptr);
 
     void updateTile(int nametable, int tileX, int tileY, const QVector<quint8> &pixels);
+        void updateTile(
+            int nametable,
+            int tileX,
+            int tileY,
+            const QVector<quint8> &pixels,
+            const QVector<quint8> &subpalette);
+        void updateFromPpu(Ppu &ppu);
     void setPalette(const NesPalette &palette);
     [[nodiscard]] const NesPalette &palette() const;
     void scrollBy(qreal deltaX, qreal deltaY);

@@ -2,6 +2,7 @@
 
 #include "NesNametableItem.h"
 #include "NesPalette.h"
+#include "Ppu.h"
 
 #include <QGraphicsRectItem>
 #include <QPen>
@@ -57,6 +58,15 @@ NesScene::NesScene(QObject *parent) : QGraphicsScene(parent) {
 }
 
 void NesScene::updateTile(int nametable, int tileX, int tileY, const QVector<quint8> &pixels) {
+	updateTile(nametable, tileX, tileY, pixels, QVector<quint8>());
+}
+
+void NesScene::updateTile(
+    int nametable,
+    int tileX,
+    int tileY,
+    const QVector<quint8> &pixels,
+    const QVector<quint8> &subpalette) {
     if (nametable < 0 || nametable >= NametableColumns * NametableRows
         || tileX < 0 || tileX >= TilesWide || tileY < 0 || tileY >= TilesHigh) {
         return;
@@ -68,7 +78,26 @@ void NesScene::updateTile(int nametable, int tileX, int tileY, const QVector<qui
     }
 
     for (NesNametableItem *nametableItem : iterator.value()) {
-        nametableItem->setTilePixels(tileX, tileY, pixels);
+        if (subpalette.size() == 4) {
+            nametableItem->setTilePixels(tileX, tileY, pixels, subpalette);
+        } else {
+            nametableItem->setTilePixels(tileX, tileY, pixels);
+        }
+    }
+}
+
+void NesScene::updateFromPpu(Ppu &ppu) {
+    for (int nametable = 0; nametable < NametableColumns * NametableRows; ++nametable) {
+        for (int tileY = 0; tileY < TilesHigh; ++tileY) {
+            for (int tileX = 0; tileX < TilesWide; ++tileX) {
+                QVector<quint8> pixels;
+                QVector<quint8> subpalette;
+                if (ppu.renderNametableTile(
+                            nametable, tileX, tileY, pixels, subpalette)) {
+                    updateTile(nametable, tileX, tileY, pixels, subpalette);
+                }
+            }
+        }
     }
 }
 

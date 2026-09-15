@@ -6,7 +6,10 @@ class Ram;
 
 class Mapper000 final : public Mapper {
 public:
-    Mapper000(Ram &prgRom, Ram &chrRom);
+    Mapper000(Ram &prgRom, Ram &chrRom, bool chrRam = false);
+
+    void setChrRam(bool enabled);
+    [[nodiscard]] bool chrRam() const;
 
     bool readCpu(quint16 address, quint8 &value) override;
     bool writeCpu(quint16 address, quint8 value) override;
@@ -16,4 +19,5 @@ public:
 private:
     Ram &prgRom;
     Ram &chrRom;
+    bool chrRamEnabled = false;
 };

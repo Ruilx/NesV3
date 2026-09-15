@@ -29,8 +29,12 @@ set(PROJECT_SOURCES
 		src/NesPalette.h
 		src/PaletteEditorDialog.cpp
 		src/PaletteEditorDialog.h
+		src/PatternTableDialog.cpp
+		src/PatternTableDialog.h
 		src/NesNametableItem.cpp
 		src/NesNametableItem.h
+		src/NesTileItem.cpp
+		src/NesTileItem.h
 		${TS_FILES}
 		src/Excption/OutOfRangeError.cpp
 		src/Excption/OutOfRangeError.h

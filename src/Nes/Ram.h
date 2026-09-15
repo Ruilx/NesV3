@@ -12,6 +12,8 @@ class Ram {
 public:
     explicit Ram(size_t size, quint8 initValue = 0x00);
 
+    void resize(size_t size, quint8 initValue = 0x00);
+
     void set8(qsizetype address, qint8 value);
 
     [[nodiscard]] qint8 get8(qsizetype address) const;

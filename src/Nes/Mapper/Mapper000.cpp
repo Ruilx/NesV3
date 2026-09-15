@@ -2,9 +2,18 @@
 
 #include "../Ram.h"
 
-Mapper000::Mapper000(Ram &prgRom, Ram &chrRom)
+Mapper000::Mapper000(Ram &prgRom, Ram &chrRom, bool chrRam)
     : prgRom(prgRom),
-      chrRom(chrRom) {
+      chrRom(chrRom),
+    chrRamEnabled(chrRam) {
+}
+
+void Mapper000::setChrRam(bool enabled) {
+    this->chrRamEnabled = enabled;
+}
+
+bool Mapper000::chrRam() const {
+    return this->chrRamEnabled;
 }
 
 bool Mapper000::readCpu(quint16 address, quint8 &value) {
@@ -30,6 +39,10 @@ bool Mapper000::readPpu(quint16 address, quint8 &value) {
     return true;
 }
 
-bool Mapper000::writePpu(quint16, quint8) {
-    return false;
+bool Mapper000::writePpu(quint16 address, quint8 value) {
+    if (!this->chrRamEnabled || address >= this->chrRom.getSize()) {
+        return false;
+    }
+    this->chrRom.setU8(address, value);
+    return true;
 }

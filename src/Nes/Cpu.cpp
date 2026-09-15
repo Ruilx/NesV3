@@ -36,13 +36,26 @@ void Cpu::writeRam(quint16 addr, quint8 value) {
 }
 
 void Cpu::clock() {
-    ++this->totalCycles;
+    this->tickCpuCycle();
 }
 
 quint8 Cpu::op8(quint16 addr) {
     quint8 value = this->cpuBus.openBusValue();
     this->cpuBus.read(addr, value);
     return value;
+}
+
+quint8 Cpu::executeInstruction() {
+    if (this->reg.intPending & Cpu::NmiFlag) {
+        this->clearIrq(Cpu::NmiFlag);
+        return this->_nmi();
+    }
+    if ((this->reg.intPending & Cpu::IrqFlag) && !(this->reg.p & Cpu::IFlag)) {
+        this->clearIrq(Cpu::IrqFlag);
+        return this->_irq();
+    }
+    const quint8 opcode = this->op8(this->reg.pc++);
+    return (this->*this->operations[opcode])();
 }
 
 quint16 Cpu::op16(quint16 addr) {
@@ -456,59 +469,67 @@ void Cpu::brk(){
     this->reg.pc = this->readRam16(Cpu::IrqVector);
 }
 
-void Cpu::relJump(){
+quint8 Cpu::relJump(){
     this->et = this->reg.pc;
     this->ea = this->reg.pc + (qint8)this->dt;
     this->reg.pc = this->ea;
-    this->checkEa();
+    return 1 + this->checkEa();
 }
 
-void Cpu::bcc(){
+quint8 Cpu::bcc(){
     if(!(this->reg.p & Cpu::CFlag)){
-        this->relJump();
+        return this->relJump();
     }
+    return 0;
 }
 
-void Cpu::bcs(){
+quint8 Cpu::bcs(){
     if(this->reg.p & Cpu::CFlag){
-        this->relJump();
+        return this->relJump();
     }
+    return 0;
 }
 
-void Cpu::bne(){
+quint8 Cpu::bne(){
     if(!(this->reg.p & Cpu::ZFlag)){
-            this->relJump();
+        return this->relJump();
     }
+    return 0;
 }
 
-void Cpu::beq(){
+quint8 Cpu::beq(){
     if(this->reg.p & Cpu::ZFlag){
-        this->relJump();
+        return this->relJump();
     }
+    return 0;
 }
 
-void Cpu::bpl(){
+quint8 Cpu::bpl(){
     if(!(this->reg.p & Cpu::NFlag)){
-        this->relJump();
+        return this->relJump();
     }
+    return 0;
 }
 
-void Cpu::bmi(){
+quint8 Cpu::bmi(){
     if(this->reg.p & Cpu::NFlag){
-        this->relJump();
+        return this->relJump();
     }
+    return 0;
 }
 
-void Cpu::bvc(){
+quint8 Cpu::bvc(){
     if(!(this->reg.p & Cpu::VFlag)){
-        this->relJump();
+        return this->relJump();
     }
+    return 0;
 }
 
-void Cpu::bvs(){
+quint8 Cpu::bvs(){
     if(this->reg.p & Cpu::VFlag){
-        this->relJump();
+        return this->relJump();
     }
+    return 0;
 }
 
 void Cpu::clc(){ this->reg.p &= ~Cpu::CFlag; }
@@ -650,12 +671,12 @@ quint8 Cpu::ANCIMM(){ this->mrIm(); this->anc();                   return 2; } /
 quint8 Cpu::ORAABS(){ this->mrAb(); this->ora();                   return 4; } // 0x0D
 quint8 Cpu::ASLABS(){ this->mrAb(); this->asl();  this->mwEa();    return 6; } // 0x0E
 quint8 Cpu::SLOABS(){ this->mrAb(); this->slo();  this->mwEa();    return 6; } // 0x0F
-quint8 Cpu::BPLREL(){ this->mrIm(); this->bpl();                   return 2; } // 0x10
+quint8 Cpu::BPLREL(){ this->mrIm(); return 2 + this->bpl(); } // 0x10
 quint8 Cpu::ORAIZY(){ this->mrIy(); this->ora();  return this->checkEa() +5; } // 0x11
 quint8 Cpu::SLOIZY(){ this->mrIy(); this->slo();  this->mwEa();    return 8; } // 0x13
-quint8 Cpu::ORAZPX(){ this->mrZx(); this->ora();                   return 3; } // 0x15
+quint8 Cpu::ORAZPX(){ this->mrZx(); this->ora();                   return 4; } // 0x15
 quint8 Cpu::ASLZPX(){ this->mrZx(); this->asl();  this->mwZp();    return 6; } // 0x16
-quint8 Cpu::SLOZPX(){ this->mrZx(); this->slo();  this->mwZp();    return 5; } // 0x17
+quint8 Cpu::SLOZPX(){ this->mrZx(); this->slo();  this->mwZp();    return 6; } // 0x17
 quint8 Cpu::CLCREL(){               this->clc();                   return 2; } // 0x18
 quint8 Cpu::ORAABY(){ this->mrAy(); this->ora();  return this->checkEa() +4; } // 0x19
 quint8 Cpu::SLOABY(){ this->mrAy(); this->slo();  this->mwEa();    return 7; } // 0x1B
@@ -676,7 +697,7 @@ quint8 Cpu::BITABS(){ this->mrAb(); this->bit();                   return 4; } /
 quint8 Cpu::ANDABS(){ this->mrAb(); this->_and();                  return 4; } // 0x2D
 quint8 Cpu::ROLABS(){ this->mrAb(); this->rol();  this->mwEa();    return 6; } // 0x2E
 quint8 Cpu::RLAABS(){ this->mrAb(); this->rla();  this->mwEa();    return 6; } // 0x2F
-quint8 Cpu::BMIREL(){ this->mrIm(); this->bmi();                   return 2; } // 0x30
+quint8 Cpu::BMIREL(){ this->mrIm(); return 2 + this->bmi(); } // 0x30
 quint8 Cpu::ANDIZY(){ this->mrIy(); this->_and(); return this->checkEa() +5; } // 0x31
 quint8 Cpu::RLAIZY(){ this->mrIy(); this->rla();  this->mwEa();    return 8; } // 0x33
 quint8 Cpu::ANDZPX(){ this->mrZx(); this->_and();                  return 4; } // 0x35
@@ -702,7 +723,7 @@ quint8 Cpu::JMPABS(){               this->jmp();                   return 3; } /
 quint8 Cpu::EORABS(){ this->mrAb(); this->eor();                   return 4; } // 0x4D
 quint8 Cpu::LSRABS(){ this->mrAb(); this->lsr();  this->mwEa();    return 6; } // 0x4E
 quint8 Cpu::SREABS(){ this->mrAb(); this->sre();  this->mwEa();    return 6; } // 0x4F
-quint8 Cpu::BVCREL(){ this->mrIm(); this->bvc();                   return 2; } // 0x50
+quint8 Cpu::BVCREL(){ this->mrIm(); return 2 + this->bvc(); } // 0x50
 quint8 Cpu::EORIZY(){ this->mrIy(); this->eor();  return this->checkEa() +5; } // 0x51
 quint8 Cpu::SREIZY(){ this->mrIy(); this->sre();  this->mwEa();    return 8; } // 0x53
 quint8 Cpu::EORZPX(){ this->mrZx(); this->eor();                   return 4; } // 0x55
@@ -728,7 +749,7 @@ quint8 Cpu::JMPIZA(){               this->jmpId();                 return 5; } /
 quint8 Cpu::ADCABS(){ this->mrAb(); this->adc();                   return 4; } // 0x6D
 quint8 Cpu::RORABS(){ this->mrAb(); this->ror();  this->mwEa();    return 6; } // 0x6E
 quint8 Cpu::RRAABS(){ this->mrAb(); this->rra();  this->mwEa();    return 6; } // 0x6F
-quint8 Cpu::BVSREL(){ this->mrIm(); this->bvs();                   return 2; } // 0x70
+quint8 Cpu::BVSREL(){ this->mrIm(); return 2 + this->bvs(); } // 0x70
 quint8 Cpu::ADCIZY(){ this->mrIy(); this->adc();  return this->checkEa() +4; } // 0x71
 quint8 Cpu::RRAIZY(){ this->mrIy(); this->rra();  this->mwEa();    return 8; } // 0x73
 quint8 Cpu::ADCZPX(){ this->mrZx(); this->adc();                   return 4; } // 0x75
@@ -753,7 +774,7 @@ quint8 Cpu::STYABS(){ this->eaAb(); this->sty();  this->mwEa();    return 4; } /
 quint8 Cpu::STAABS(){ this->eaAb(); this->sta();  this->mwEa();    return 4; } // 0x8D
 quint8 Cpu::STXABS(){ this->eaAb(); this->stx();  this->mwEa();    return 4; } // 0x8E
 quint8 Cpu::SAXABS(){ this->mrAb(); this->sax();  this->mwEa();    return 4; } // 0x8F
-quint8 Cpu::BCCREL(){ this->mrIm(); this->bcc();                   return 2; } // 0x90
+quint8 Cpu::BCCREL(){ this->mrIm(); return 2 + this->bcc(); } // 0x90
 quint8 Cpu::STAIZY(){ this->eaIy(); this->sta();  this->mwEa();    return 6; } // 0x91
 quint8 Cpu::SHAIZY(){ this->mrIy(); this->sha();  this->mwEa();    return 6; } // 0x93
 quint8 Cpu::STYZPX(){ this->eaZx(); this->sty();  this->mwZp();    return 4; } // 0x94
@@ -784,7 +805,7 @@ quint8 Cpu::LDYABS(){ this->mrAb(); this->ldy();                   return 4; } /
 quint8 Cpu::LDAABS(){ this->mrAb(); this->lda();                   return 4; } // 0xAD
 quint8 Cpu::LDXABS(){ this->mrAb(); this->ldx();                   return 4; } // 0xAE
 quint8 Cpu::LAXABS(){ this->mrAb(); this->lax();                   return 4; } // 0xAF
-quint8 Cpu::BCSREL(){ this->mrIm(); this->bcs();                   return 2; } // 0xB0
+quint8 Cpu::BCSREL(){ this->mrIm(); return 2 + this->bcs(); } // 0xB0
 quint8 Cpu::LDAIZY(){ this->mrIy(); this->lda();  return this->checkEa() +5; } // 0xB1
 quint8 Cpu::LAXIZY(){ this->mrIy(); this->lax();  return this->checkEa() +5; } // 0xB3
 quint8 Cpu::LDYZPX(){ this->mrZx(); this->ldy();                   return 4; } // 0xB4
@@ -800,7 +821,7 @@ quint8 Cpu::LDAABX(){ this->mrAx(); this->lda();  return this->checkEa() +4; } /
 quint8 Cpu::LDXABY(){ this->mrAy(); this->ldx();  return this->checkEa() +4; } // 0xBE
 quint8 Cpu::LAXABY(){ this->mrAy(); this->lax();  return this->checkEa() +4; } // 0xBF
 quint8 Cpu::CPYIMM(){ this->mrIm(); this->cpy();                   return 2; } // 0xC0
-quint8 Cpu::CMPIZX(){ this->mrIx(); this->cmp();  return this->checkEa() +5; } // 0xC1
+quint8 Cpu::CMPIZX(){ this->mrIx(); this->cmp();                   return 6; } // 0xC1
 quint8 Cpu::DCPIZX(){ this->mrIx(); this->dcp();  this->mwEa();    return 8; } // 0xC3
 quint8 Cpu::CPYZP_(){ this->mrZp(); this->cpy();                   return 3; } // 0xC4
 quint8 Cpu::CMPZP_(){ this->mrZp(); this->cmp();                   return 3; } // 0xC5
@@ -814,7 +835,7 @@ quint8 Cpu::CPYABS(){ this->mrAb(); this->cpy();                   return 4; } /
 quint8 Cpu::CMPABS(){ this->mrAb(); this->cmp();                   return 4; } // 0xCD
 quint8 Cpu::DECABS(){ this->mrAb(); this->dec();  this->mwEa();    return 6; } // 0xCE
 quint8 Cpu::DCPABS(){ this->mrAb(); this->dcp();  this->mwEa();    return 6; } // 0xCF
-quint8 Cpu::BNEREL(){ this->mrIm(); this->bne();                   return 2; } // 0xD0
+quint8 Cpu::BNEREL(){ this->mrIm(); return 2 + this->bne(); } // 0xD0
 quint8 Cpu::CMPIZY(){ this->mrIy(); this->cmp();  return this->checkEa() +5; } // 0xD1
 quint8 Cpu::DCPIZY(){ this->mrIy(); this->dcp();  this->mwEa();    return 8; } // 0xD3
 quint8 Cpu::CMPZPX(){ this->mrZx(); this->cmp();                   return 4; } // 0xD5
@@ -828,7 +849,7 @@ quint8 Cpu::DECABX(){ this->mrAx(); this->dec();  this->mwEa();    return 7; } /
 quint8 Cpu::DCPABX(){ this->mrAx(); this->dcp();  this->mwEa();    return 7; } // 0xDF
 quint8 Cpu::CPXIMM(){ this->mrIm(); this->cpx();                   return 2; } // 0xE0
 quint8 Cpu::SBCIZX(){ this->mrIx(); this->sbc();                   return 6; } // 0xE1
-quint8 Cpu::ISBIZX(){ this->mrIx(); this->isb();  this->mwEa();    return 5; } // 0xE3
+quint8 Cpu::ISBIZX(){ this->mrIx(); this->isb();  this->mwEa();    return 8; } // 0xE3
 quint8 Cpu::CPXZP_(){ this->mrZp(); this->cpx();                   return 3; } // 0xE4
 quint8 Cpu::SBCZP_(){ this->mrZp(); this->sbc();                   return 3; } // 0xE5
 quint8 Cpu::INCZP_(){ this->mrZp(); this->inc();  this->mwZp();    return 5; } // 0xE6
@@ -838,19 +859,19 @@ quint8 Cpu::SBCIMM(){ this->mrIm(); this->sbc();                   return 2; } /
 quint8 Cpu::CPXABS(){ this->mrAb(); this->cpx();                   return 4; } // 0xEC
 quint8 Cpu::SBCABS(){ this->mrAb(); this->sbc();                   return 4; } // 0xED
 quint8 Cpu::INCABS(){ this->mrAb(); this->inc();  this->mwEa();    return 6; } // 0xEE
-quint8 Cpu::ISBABS(){ this->mrAb(); this->isb();  this->mwEa();    return 5; } // 0xEF
-quint8 Cpu::BEQREL(){ this->mrIm(); this->beq();                   return 2; } // 0xF0
+quint8 Cpu::ISBABS(){ this->mrAb(); this->isb();  this->mwEa();    return 6; } // 0xEF
+quint8 Cpu::BEQREL(){ this->mrIm(); return 2 + this->beq(); } // 0xF0
 quint8 Cpu::SBCIZY(){ this->mrIy(); this->sbc();  return this->checkEa() +5; } // 0xF1
-quint8 Cpu::ISBIZY(){ this->mrIy(); this->isb();  this->mwEa();    return 5; } // 0xF3
+quint8 Cpu::ISBIZY(){ this->mrIy(); this->isb();  this->mwEa();    return 8; } // 0xF3
 quint8 Cpu::SBCZPX(){ this->mrZx(); this->sbc();                   return 4; } // 0xF5
 quint8 Cpu::INCZPX(){ this->mrZx(); this->inc();  this->mwZp();    return 6; } // 0xF6
-quint8 Cpu::ISBZPX(){ this->mrZx(); this->isb();  this->mwZp();    return 5; } // 0xF7
+quint8 Cpu::ISBZPX(){ this->mrZx(); this->isb();  this->mwZp();    return 6; } // 0xF7
 quint8 Cpu::SEDREL(){               this->sed();                   return 2; } // 0xF8
 quint8 Cpu::SBCABY(){ this->mrAy(); this->sbc();  return this->checkEa() +4; } // 0xF9
-quint8 Cpu::ISBABY(){ this->mrAy(); this->isb();  this->mwEa();    return 5; } // 0xFB
+quint8 Cpu::ISBABY(){ this->mrAy(); this->isb();  this->mwEa();    return 7; } // 0xFB
 quint8 Cpu::SBCABX(){ this->mrAx(); this->sbc();  return this->checkEa() +4; } // 0xFD
 quint8 Cpu::INCABX(){ this->mrAx(); this->inc();  this->mwEa();    return 7; } // 0xFE
-quint8 Cpu::ISBABX(){ this->mrAx(); this->isb();  this->mwEa();    return 5; } // 0xFF
+quint8 Cpu::ISBABX(){ this->mrAx(); this->isb();  this->mwEa();    return 7; } // 0xFF
 quint8 Cpu::NOPREL(){                                              return 2; } // 0x1A, 0x3A, 0x5A, 0x7A, 0xDA, 0xFA
 quint8 Cpu::DOP__2(){ reg.pc++;                                      return 2; } // 0x80, 0x82, 0x89, 0xC2, 0xE2
 quint8 Cpu::DOP__3(){ reg.pc++;                                      return 3; } // 0x04, 0x44, 0x64
@@ -870,6 +891,7 @@ void Cpu::reset(){
 
     this->totalCycles = 0;
     this->dmaCycles = 0;
+    this->instructionCyclesRemaining = 0;
 
     this->znTable[0] = Cpu::ZFlag;
     for (quint16 i = 1; i < 256; ++i) {
@@ -894,6 +916,28 @@ void Cpu::dma(quint64 cycles) {
     this->dmaCycles += cycles;
 }
 
+quint8 Cpu::stepInstruction() {
+    const quint8 instructionCycles = this->executeInstruction();
+    this->totalCycles += instructionCycles;
+    return instructionCycles;
+}
+
+void Cpu::tickCpuCycle() {
+    if (this->dmaCycles > 0) {
+        --this->dmaCycles;
+        ++this->totalCycles;
+        return;
+    }
+
+    if (this->instructionCyclesRemaining == 0) {
+        const quint8 instructionCycles = this->executeInstruction();
+        this->instructionCyclesRemaining = instructionCycles > 0 ? instructionCycles - 1 : 0;
+    } else {
+        --this->instructionCyclesRemaining;
+    }
+    ++this->totalCycles;
+}
+
 quint64 Cpu::exec(quint64 requestCycles) {
     const quint64 oldCycles = this->totalCycles;
     while (requestCycles > 0) {
@@ -909,9 +953,7 @@ quint64 Cpu::exec(quint64 requestCycles) {
             }
         }
 
-        const quint8 opcode = this->op8(this->reg.pc++);
-        const quint64 instructionCycles = (this->*this->operations[opcode])();
-        this->totalCycles += instructionCycles;
+        const quint64 instructionCycles = this->stepInstruction();
         if (instructionCycles > requestCycles) {
             requestCycles = 0;
         } else {

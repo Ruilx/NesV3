@@ -4,6 +4,7 @@
 #include "Mapper/Mapper.h"
 #include "Ram.h"
 #include "Mapper/Mapper000.h"
+#include "InesHeader.h"
 
 class Cartridge {
 public:
@@ -17,6 +18,11 @@ public:
     void connect(Bus &cpuBus, Bus &ppuBus);
     void disconnect();
 
+    [[nodiscard]] bool loadFromFile(const QString &path, QString &error);
+    void unload();
+    [[nodiscard]] bool isLoaded() const;
+    [[nodiscard]] const InesHeader &header() const;
+
     [[nodiscard]] Ram &prgRom();
     [[nodiscard]] Ram &chrRom();
     [[nodiscard]] const Ram &prgRom() const;
@@ -28,6 +34,8 @@ private:
     Mapper000 mapper;
     MapperCpuDevice cpuDevice;
     MapperPpuDevice ppuDevice;
+    InesHeader inesHeader;
+    bool loaded = false;
     Bus *connectedCpuBus = nullptr;
     Bus *connectedPpuBus = nullptr;
     Bus::MappingId cpuMappingId = 0;

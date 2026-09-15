@@ -1,11 +1,77 @@
 #include "Cartridge.h"
 
+#include <QFile>
+
 Cartridge::Cartridge(size_t prgRomSize, size_t chrRomSize)
     : prgRomStorage(prgRomSize),
       chrRomStorage(chrRomSize),
       mapper(this->prgRomStorage, this->chrRomStorage),
       cpuDevice(this->mapper),
       ppuDevice(this->mapper) {
+        this->mapper.setChrRam(false);
+}
+
+bool Cartridge::loadFromFile(const QString &path, QString &error) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        error = file.errorString();
+        return false;
+    }
+    const QByteArray data = file.readAll();
+    InesHeader parsedHeader;
+    if (!InesHeader::parse(data, parsedHeader, error)) {
+        return false;
+    }
+    if (parsedHeader.mapperNumber != 0) {
+        error = QStringLiteral("Mapper %1 is not supported yet.")
+                .arg(parsedHeader.mapperNumber);
+        return false;
+    }
+
+    const qsizetype dataOffset = InesHeader::Size
+            + (parsedHeader.hasTrainer ? 512 : 0);
+    const qsizetype prgSize = parsedHeader.prgRomSize();
+    const qsizetype chrSize = parsedHeader.chrRomBanks == 0
+            ? InesHeader::ChrBankSize
+            : parsedHeader.chrRomSize();
+    Bus *cpuBus = this->connectedCpuBus;
+    Bus *ppuBus = this->connectedPpuBus;
+    this->disconnect();
+    this->prgRomStorage.resize(static_cast<size_t>(prgSize));
+    this->chrRomStorage.resize(static_cast<size_t>(chrSize));
+    for (qsizetype index = 0; index < prgSize; ++index) {
+        this->prgRomStorage.setU8(index, static_cast<quint8>(data[dataOffset + index]));
+    }
+    this->mapper.setChrRam(parsedHeader.chrRomBanks == 0);
+    if (parsedHeader.chrRomBanks != 0) {
+        const qsizetype chrOffset = dataOffset + prgSize;
+        for (qsizetype index = 0; index < parsedHeader.chrRomSize(); ++index) {
+            this->chrRomStorage.setU8(index, static_cast<quint8>(data[chrOffset + index]));
+        }
+    }
+    this->inesHeader = parsedHeader;
+    this->loaded = true;
+    if (cpuBus != nullptr && ppuBus != nullptr) {
+        this->connect(*cpuBus, *ppuBus);
+    }
+    return true;
+}
+
+void Cartridge::unload() {
+    this->disconnect();
+    this->prgRomStorage.clear();
+    this->chrRomStorage.clear();
+    this->mapper.setChrRam(false);
+    this->inesHeader = InesHeader();
+    this->loaded = false;
+}
+
+bool Cartridge::isLoaded() const {
+    return this->loaded;
+}
+
+const InesHeader &Cartridge::header() const {
+    return this->inesHeader;
 }
 
 Cartridge::~Cartridge() {
@@ -30,7 +96,9 @@ void Cartridge::connect(Bus &cpuBus, Bus &ppuBus) {
         .start = 0x0000,
         .end = 0x1FFF,
         .priority = 0,
-        .flags = AccessFlags::Readable,
+        .flags = this->mapper.chrRam()
+            ? AccessFlags::Readable | AccessFlags::Writable
+            : AccessFlags::Readable,
         .name = QStringLiteral("Cartridge CHR-ROM"),
         .device = &this->ppuDevice,
     };
