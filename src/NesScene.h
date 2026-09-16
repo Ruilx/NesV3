@@ -15,6 +15,12 @@ class NesScene : public QGraphicsScene {
     Q_OBJECT
 
 public:
+    struct UpdateStats {
+        quint64 dirtyTiles = 0;
+        quint64 decodedTiles = 0;
+        quint64 updatedTiles = 0;
+        quint64 elapsedNanoseconds = 0;
+    };
     static constexpr int TileSize = 8;
     static constexpr int TilesWide = 32;
     static constexpr int TilesHigh = 30;
@@ -33,12 +39,14 @@ public:
             const QVector<quint8> &pixels,
             const QVector<quint8> &subpalette);
         void updateFromPpu(Ppu &ppu);
+            void invalidateTileCache();
     void setPalette(const NesPalette &palette);
     [[nodiscard]] const NesPalette &palette() const;
     void scrollBy(qreal deltaX, qreal deltaY);
     void setScrollOffset(qreal x, qreal y);
     [[nodiscard]] QPointF scrollOffset() const;
     [[nodiscard]] QRectF nesViewportRect() const;
+    [[nodiscard]] UpdateStats takeUpdateStats();
 
 private:
     struct NametablePlacement {
@@ -50,9 +58,18 @@ private:
     void createDemoNametables();
     void createViewportFrame();
     void layoutNametableCopies();
+    [[nodiscard]] int tileCacheIndex(int nametable, int tileX, int tileY) const;
+
+    struct TileState {
+        QVector<quint8> pixels;
+        QVector<quint8> subpalette;
+        bool valid = false;
+    };
 
     NesPalette nesPalette;
     QHash<quint64, QVector<NesNametableItem *>> tiles;
+    QVector<TileState> tileStates;
     QVector<NametablePlacement> placements;
     QPointF scroll = QPointF(0, 0);
+    UpdateStats updateStats;
 };

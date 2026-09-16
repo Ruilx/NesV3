@@ -1,13 +1,22 @@
 #include "NesNametableItem.h"
 
+#include "NesTileItem.h"
+
 #include "NesPalette.h"
 
 #include <QPainter>
 #include <QStyleOptionGraphicsItem>
 
 NesNametableItem::NesNametableItem(QGraphicsItem *parent)
-    : QGraphicsItem(parent), image(Width, Height, QImage::Format_ARGB32) {
-    image.fill(Qt::black);
+    : QGraphicsItem(parent) {
+    this->tiles.reserve(TileCount);
+    for (int tileY = 0; tileY < Height / 8; ++tileY) {
+        for (int tileX = 0; tileX < Width / 8; ++tileX) {
+            auto *tile = new NesTileItem(this);
+            tile->setPos(tileX * 8, tileY * 8);
+            this->tiles.append(tile);
+        }
+    }
 }
 
 QRectF NesNametableItem::boundingRect() const {
@@ -15,13 +24,14 @@ QRectF NesNametableItem::boundingRect() const {
 }
 
 void NesNametableItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *) {
-    painter->drawImage(QPointF(0, 0), this->image);
+    Q_UNUSED(painter);
 }
 
 void NesNametableItem::setPalette(const NesPalette &palette) {
     this->palette = palette;
-    rebuildImage();
-    update();
+    for (NesTileItem *tile : this->tiles) {
+        tile->setPalette(this->palette.colors());
+    }
 }
 
 void NesNametableItem::setSubpalette(const QVector<quint8> &subpalette) {
@@ -30,8 +40,6 @@ void NesNametableItem::setSubpalette(const QVector<quint8> &subpalette) {
     }
 
     this->subpalette = subpalette;
-    rebuildImage();
-    update();
 }
 
 void NesNametableItem::setTilePixels(int tileX, int tileY, const QVector<quint8> &tilePixels) {
@@ -50,33 +58,7 @@ void NesNametableItem::setTilePixels(
 		return;
 	}
 
-    for (int y = 0; y < 8; ++y) {
-        for (int x = 0; x < 8; ++x) {
-            const int sourceIndex = y * 8 + x;
-            const int destinationIndex = (tileY * 8 + y) * Width + tileX * 8 + x;
-            this->pixels[destinationIndex] = tilePixels.value(sourceIndex, 0);
-			this->colorIndices[destinationIndex] = tileSubpalette.value(
-					this->pixels[destinationIndex], tileSubpalette.value(0));
-        }
-    }
-
-    for (int y = 0; y < 8; ++y) {
-        for (int x = 0; x < 8; ++x) {
-            const int index = (tileY * 8 + y) * Width + tileX * 8 + x;
-            this->image.setPixelColor(tileX * 8 + x, tileY * 8 + y,
-							this->palette.colorAt(this->colorIndices[index]));
-        }
-    }
-
-    update(QRectF(tileX * 8, tileY * 8, 8, 8));
-}
-
-void NesNametableItem::rebuildImage() {
-    for (int y = 0; y < Height; ++y) {
-        for (int x = 0; x < Width; ++x) {
-            const int index = y * Width + x;
-            this->image.setPixelColor(x, y,
-							this->palette.colorAt(this->colorIndices[index]));
-        }
-    }
+    const int tileIndex = tileY * (Width / 8) + tileX;
+    this->tiles.value(tileIndex)->setPaletteIndices(
+            tilePixels, tileSubpalette, this->palette);
 }

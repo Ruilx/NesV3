@@ -2,6 +2,7 @@
 
 #include "NesPalette.h"
 #include "NesScene.h"
+#include "NesTileItem.h"
 #include "NesView.h"
 #include "PaletteEditorDialog.h"
 #include "PatternTableDialog.h"
@@ -9,10 +10,13 @@
 #include <QAction>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QDebug>
+#include <QElapsedTimer>
 #include <QMessageBox>
 #include <QMenu>
 #include <QMenuBar>
 #include <QSettings>
+#include <QStatusBar>
 
 namespace {
 NesPalette loadStoredPalette() {
@@ -42,11 +46,20 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent) {
     this->setWindowTitle("NesV3");
 
     auto *view = new NesView(this);
+    connect(view, &NesView::buttonChanged, this, [this](int button, bool pressed) {
+        if (button < 0 || button > 7) {
+            return;
+        }
+        this->nes.controller().setButton(
+            static_cast<Controller::Button>(button), pressed);
+    });
     this->scene = new NesScene(view);
     this->scene->setPalette(loadStoredPalette());
     view->setScene(this->scene);
     view->centerOn(this->scene->nesViewportRect().center());
     this->setCentralWidget(view);
+    this->statusBar()->showMessage(tr("Performance: waiting for ROM"));
+    this->performanceTimer.start();
 
         this->simulationTimer.setInterval(16);
         this->simulationTimer.setTimerType(Qt::PreciseTimer);
@@ -132,6 +145,7 @@ void MainWindow::openRom() {
     this->nes.cpu().reset();
     this->nes.ppu().reset();
     this->nes.clock().reset();
+    this->scene->invalidateTileCache();
     this->scene->updateFromPpu(this->nes.ppu());
     this->simulationTimer.start();
     this->currentRomPath = path;
@@ -146,6 +160,7 @@ void MainWindow::closeRom() {
     this->nes.cpu().reset();
     this->nes.ppu().reset();
     this->nes.clock().reset();
+    this->scene->invalidateTileCache();
     this->currentRomPath.clear();
     updateWindowTitle();
 }
@@ -155,8 +170,72 @@ void MainWindow::runSimulationFrame() {
         return;
     }
 
+    QElapsedTimer coreTimer;
+    coreTimer.start();
     this->nes.runFrame();
+    const quint64 coreNanoseconds = static_cast<quint64>(coreTimer.nsecsElapsed());
+
+    QElapsedTimer sceneTimer;
+    sceneTimer.start();
     this->scene->updateFromPpu(this->nes.ppu());
+    const quint64 sceneNanoseconds = static_cast<quint64>(sceneTimer.nsecsElapsed());
+    const NesScene::UpdateStats sceneStats = this->scene->takeUpdateStats();
+
+    ++this->performanceFrameCount;
+    this->performanceCoreNanoseconds += coreNanoseconds;
+    this->performanceSceneNanoseconds += sceneNanoseconds;
+    this->performanceDirtyTiles += sceneStats.dirtyTiles;
+    this->performanceDecodedTiles += sceneStats.decodedTiles;
+    this->performanceUpdatedTiles += sceneStats.updatedTiles;
+
+    const qint64 elapsedMilliseconds = this->performanceTimer.elapsed();
+    if (elapsedMilliseconds < 1000) {
+        return;
+    }
+
+    const double seconds = elapsedMilliseconds / 1000.0;
+    const NesTileItem::PaintStats tileStats = NesTileItem::paintStats();
+    const NesClock::TimingStats clockStats = this->nes.clock().takeTimingStats();
+    const Ppu::WriteStats ppuWriteStats = this->nes.ppu().takeWriteStats();
+    const double simulationFps = this->performanceFrameCount / seconds;
+    const double averageCoreMs = this->performanceCoreNanoseconds
+        / static_cast<double>(this->performanceFrameCount) / 1000000.0;
+    const double averageSceneMs = this->performanceSceneNanoseconds
+        / static_cast<double>(this->performanceFrameCount) / 1000000.0;
+    const double averageCpuUs = clockStats.cpuSamples == 0
+        ? 0.0
+        : clockStats.cpuNanoseconds
+            / static_cast<double>(clockStats.cpuSamples) / 1000.0;
+    const double averagePpuUs = clockStats.ppuSamples == 0
+        ? 0.0
+        : clockStats.ppuNanoseconds
+            / static_cast<double>(clockStats.ppuSamples) / 1000.0;
+    const QString message = QStringLiteral(
+        "FPS %1 | core %2 ms (CPU %3 us, PPU %4 us) | scene %5 ms | dirty %6 | decode %7 | update %8 | paint %9 | PPU writes CHR %10 NT %11 PAL %12 OAM %13")
+        .arg(simulationFps, 0, 'f', 1)
+        .arg(averageCoreMs, 0, 'f', 3)
+        .arg(averageCpuUs, 0, 'f', 1)
+        .arg(averagePpuUs, 0, 'f', 1)
+        .arg(averageSceneMs, 0, 'f', 3)
+        .arg(this->performanceDirtyTiles)
+        .arg(this->performanceDecodedTiles)
+        .arg(this->performanceUpdatedTiles)
+        .arg(tileStats.paintCalls)
+        .arg(ppuWriteStats.chrWrites)
+        .arg(ppuWriteStats.nametableWrites)
+        .arg(ppuWriteStats.paletteWrites)
+        .arg(ppuWriteStats.oamDataWrites);
+    this->statusBar()->showMessage(message);
+    qInfo().noquote() << message;
+
+    this->performanceTimer.restart();
+    this->performanceFrameCount = 0;
+    this->performanceCoreNanoseconds = 0;
+    this->performanceSceneNanoseconds = 0;
+    this->performanceDirtyTiles = 0;
+    this->performanceDecodedTiles = 0;
+    this->performanceUpdatedTiles = 0;
+    NesTileItem::resetPaintStats();
 }
 
 void MainWindow::updateWindowTitle() {

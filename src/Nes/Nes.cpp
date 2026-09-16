@@ -25,6 +25,15 @@ Nes::Nes(NesClock::TimingProfile timing)
                 },
             };
             this->cpuComponent.bus().registerMapping(ppuRegisterMapping);
+            const Bus::Mapping controllerMapping{
+                .start = 0x4016,
+                .end = 0x4017,
+                .priority = 0,
+                .flags = AccessFlags::Readable | AccessFlags::Writable,
+                .name = QStringLiteral("Controller ports"),
+                .device = &this->controllerComponent,
+            };
+            this->cpuComponent.bus().registerMapping(controllerMapping);
     this->cartridgeComponent.connect(this->cpuComponent.bus(), this->ppuComponent.bus());
 }
 
@@ -50,6 +59,14 @@ Cartridge &Nes::cartridge() {
 
 const Cartridge &Nes::cartridge() const {
     return this->cartridgeComponent;
+}
+
+Controller &Nes::controller() {
+    return this->controllerComponent;
+}
+
+const Controller &Nes::controller() const {
+    return this->controllerComponent;
 }
 
 NesClock &Nes::clock() {

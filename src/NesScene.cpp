@@ -6,6 +6,7 @@
 
 #include <QGraphicsRectItem>
 #include <QPen>
+#include <QElapsedTimer>
 
 #include <cmath>
 
@@ -52,6 +53,7 @@ QVector<quint8> demoTile(int nametable, int tileX, int tileY) {
 
 NesScene::NesScene(QObject *parent) : QGraphicsScene(parent) {
     setSceneRect(0, 0, NametableWidth, NametableHeight);
+    this->tileStates.resize(NametableColumns * NametableRows * TilesWide * TilesHigh);
 
     createDemoNametables();
     createViewportFrame();
@@ -84,20 +86,76 @@ void NesScene::updateTile(
             nametableItem->setTilePixels(tileX, tileY, pixels);
         }
     }
+
+    TileState &state = this->tileStates[tileCacheIndex(nametable, tileX, tileY)];
+    state.pixels = pixels;
+    state.subpalette = subpalette;
+    state.valid = true;
 }
 
 void NesScene::updateFromPpu(Ppu &ppu) {
-    for (int nametable = 0; nametable < NametableColumns * NametableRows; ++nametable) {
-        for (int tileY = 0; tileY < TilesHigh; ++tileY) {
-            for (int tileX = 0; tileX < TilesWide; ++tileX) {
-                QVector<quint8> pixels;
-                QVector<quint8> subpalette;
-                if (ppu.renderNametableTile(
-                            nametable, tileX, tileY, pixels, subpalette)) {
-                    updateTile(nametable, tileX, tileY, pixels, subpalette);
+    QElapsedTimer elapsedTimer;
+    elapsedTimer.start();
+    const QVector<Ppu::DirtyTile> dirtyTiles = ppu.takeDirtyTiles();
+    this->updateStats.dirtyTiles += static_cast<quint64>(dirtyTiles.size());
+    bool fullUpdate = false;
+    for (const TileState &state : this->tileStates) {
+        if (!state.valid) {
+            fullUpdate = true;
+            break;
+        }
+    }
+
+    auto updateOneTile = [this, &ppu](int nametable, int tileX, int tileY) {
+        QVector<quint8> pixels;
+        QVector<quint8> subpalette;
+        if (!ppu.renderNametableTile(
+                nametable, tileX, tileY, pixels, subpalette)) {
+            return;
+        }
+        ++this->updateStats.decodedTiles;
+
+        TileState &state = this->tileStates[
+            this->tileCacheIndex(nametable, tileX, tileY)];
+        if (!state.valid || state.pixels != pixels
+                || state.subpalette != subpalette) {
+            this->updateTile(nametable, tileX, tileY, pixels, subpalette);
+            ++this->updateStats.updatedTiles;
+        }
+    };
+
+    if (fullUpdate) {
+        for (int nametable = 0;
+            nametable < NametableColumns * NametableRows; ++nametable) {
+            for (int tileY = 0; tileY < TilesHigh; ++tileY) {
+                for (int tileX = 0; tileX < TilesWide; ++tileX) {
+                    updateOneTile(nametable, tileX, tileY);
                 }
             }
         }
+        this->updateStats.elapsedNanoseconds += static_cast<quint64>(
+            elapsedTimer.nsecsElapsed());
+        return;
+    }
+
+    for (const Ppu::DirtyTile &tile : dirtyTiles) {
+        updateOneTile(tile.nametable, tile.tileX, tile.tileY);
+    }
+    this->updateStats.elapsedNanoseconds += static_cast<quint64>(
+        elapsedTimer.nsecsElapsed());
+}
+
+NesScene::UpdateStats NesScene::takeUpdateStats() {
+    const UpdateStats result = this->updateStats;
+    this->updateStats = UpdateStats();
+    return result;
+}
+
+void NesScene::invalidateTileCache() {
+    for (TileState &state : this->tileStates) {
+        state.valid = false;
+        state.pixels.clear();
+        state.subpalette.clear();
     }
 }
 
@@ -172,6 +230,10 @@ void NesScene::layoutNametableCopies() {
             NametableHeight * NametableRows, NametableHeight);
         placement.item->setPos(x, y);
     }
+}
+
+int NesScene::tileCacheIndex(int nametable, int tileX, int tileY) const {
+    return (nametable * TilesHigh + tileY) * TilesWide + tileX;
 }
 
 void NesScene::createViewportFrame() {

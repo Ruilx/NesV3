@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Cartridge.h"
+#include "Controller.h"
 #include "Cpu.h"
 #include "Ppu.h"
 #include "NesClock.h"
@@ -19,6 +20,8 @@ public:
     [[nodiscard]] const Ppu &ppu() const;
     [[nodiscard]] Cartridge &cartridge();
     [[nodiscard]] const Cartridge &cartridge() const;
+    [[nodiscard]] Controller &controller();
+    [[nodiscard]] const Controller &controller() const;
     [[nodiscard]] NesClock &clock();
     [[nodiscard]] const NesClock &clock() const;
     void runMasterTicks(quint64 ticks);
@@ -27,6 +30,7 @@ public:
 private:
     Cpu cpuComponent;
     Ppu ppuComponent;
+    Controller controllerComponent;
     Cartridge cartridgeComponent;
     NesClock clockComponent;
 };

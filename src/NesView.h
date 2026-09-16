@@ -12,6 +12,9 @@ public:
     [[nodiscard]] qreal zoomFactor() const;
     void resetZoom();
 
+signals:
+    void buttonChanged(int button, bool pressed);
+
 protected:
     void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;

@@ -23,6 +23,13 @@ public:
 
     using TickCallback = std::function<void()>;
 
+    struct TimingStats {
+        quint64 cpuNanoseconds = 0;
+        quint64 ppuNanoseconds = 0;
+        quint64 cpuSamples = 0;
+        quint64 ppuSamples = 0;
+    };
+
     NesClock(TickCallback cpuTick, TickCallback ppuTick);
     NesClock(TickCallback cpuTick, TickCallback ppuTick, TimingProfile timing);
 
@@ -35,6 +42,7 @@ public:
     [[nodiscard]] const TimingProfile &timing() const;
     [[nodiscard]] quint64 ppuTicks() const;
     [[nodiscard]] quint64 cpuCycles() const;
+    [[nodiscard]] TimingStats takeTimingStats();
 
 private:
     TickCallback cpuTickCallback;
@@ -43,4 +51,7 @@ private:
     quint32 cpuPhase = 0;
     quint64 ppuTicksValue = 0;
     quint64 cpuCyclesValue = 0;
+    quint64 cpuCallbackCount = 0;
+    quint64 ppuCallbackCount = 0;
+    TimingStats timingStats;
 };

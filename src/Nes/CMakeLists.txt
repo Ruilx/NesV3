@@ -6,6 +6,8 @@ add_library(Nes STATIC
     Bus.h
     Cartridge.cpp
     Cartridge.h
+    Controller.cpp
+    Controller.h
     InesHeader.cpp
     InesHeader.h
     ChrTileDecoder.cpp

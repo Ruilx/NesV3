@@ -14,7 +14,9 @@ NesView::NesView(QWidget *parent) : QGraphicsView(parent) {
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setTransformationAnchor(QGraphicsView::NoAnchor);
     setResizeAnchor(QGraphicsView::NoAnchor);
-    setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
+    setViewportUpdateMode(QGraphicsView::SmartViewportUpdate);
+    setRenderHint(QPainter::Antialiasing, false);
+    setRenderHint(QPainter::SmoothPixmapTransform, false);
     setBackgroundBrush(QColor(24, 24, 28));
     setDragMode(QGraphicsView::NoDrag);
     setInteractive(true);
@@ -98,19 +100,42 @@ void NesView::mouseReleaseEvent(QMouseEvent *event) {
 }
 
 void NesView::keyPressEvent(QKeyEvent *event) {
+    if (event->isAutoRepeat()) {
+        event->accept();
+        return;
+    }
+
+    int button = -1;
     bool handled = true;
     switch (event->key()) {
         case Qt::Key_Left:
             this->scrollLeft = true;
+            button = 6;
             break;
         case Qt::Key_Right:
             this->scrollRight = true;
+            button = 7;
             break;
         case Qt::Key_Up:
             this->scrollUp = true;
+            button = 4;
             break;
         case Qt::Key_Down:
             this->scrollDown = true;
+            button = 5;
+            break;
+        case Qt::Key_Z:
+            button = 0;
+            break;
+        case Qt::Key_X:
+            button = 1;
+            break;
+        case Qt::Key_Shift:
+            button = 2;
+            break;
+        case Qt::Key_Return:
+        case Qt::Key_Enter:
+            button = 3;
             break;
         default:
             handled = false;
@@ -122,24 +147,48 @@ void NesView::keyPressEvent(QKeyEvent *event) {
         return;
     }
 
+    emit this->buttonChanged(button, true);
     updateScrollTimer();
     event->accept();
 }
 
 void NesView::keyReleaseEvent(QKeyEvent *event) {
+    if (event->isAutoRepeat()) {
+        event->accept();
+        return;
+    }
+
+    int button = -1;
     bool handled = true;
     switch (event->key()) {
         case Qt::Key_Left:
             this->scrollLeft = false;
+            button = 6;
             break;
         case Qt::Key_Right:
             this->scrollRight = false;
+            button = 7;
             break;
         case Qt::Key_Up:
             this->scrollUp = false;
+            button = 4;
             break;
         case Qt::Key_Down:
             this->scrollDown = false;
+            button = 5;
+            break;
+        case Qt::Key_Z:
+            button = 0;
+            break;
+        case Qt::Key_X:
+            button = 1;
+            break;
+        case Qt::Key_Shift:
+            button = 2;
+            break;
+        case Qt::Key_Return:
+        case Qt::Key_Enter:
+            button = 3;
             break;
         default:
             handled = false;
@@ -151,6 +200,7 @@ void NesView::keyReleaseEvent(QKeyEvent *event) {
         return;
     }
 
+    emit this->buttonChanged(button, false);
     updateScrollTimer();
     event->accept();
 }

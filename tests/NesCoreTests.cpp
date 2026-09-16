@@ -1,8 +1,10 @@
 #include "Cartridge.h"
 #include "ChrTileDecoder.h"
+#include "Controller.h"
 #include "Cpu.h"
 #include "Nes.h"
 #include "NesClock.h"
+#include "Ppu.h"
 #include "Ram.h"
 
 #include <cstdlib>
@@ -197,6 +199,32 @@ void testCpuPpuBusIsolation() {
         "PPU bus should not see CPU RAM mappings");
     check(cpuBus.read(0x0000, value) == Bus::AccessResult::Handled && value == 0x33,
         "CPU bus should retain its own RAM mapping");
+}
+
+void testControllerSerialRead() {
+    Controller controller;
+    controller.setButton(Controller::Button::A, true);
+    controller.setButton(Controller::Button::Start, true);
+    controller.write(0, 1);
+    controller.write(0, 0);
+
+    quint8 value = 0;
+    check(controller.read(0, value) && value == 1,
+        "controller should read the A button first");
+    check(controller.read(0, value) && value == 0,
+        "controller should read an unpressed B button");
+    check(controller.read(0, value) && value == 0,
+        "controller should read an unpressed Select button");
+    check(controller.read(0, value) && value == 1,
+        "controller should read the Start button fourth");
+    for (int index = 0; index < 4; ++index) {
+        controller.read(0, value);
+        check(value == 0, "controller directions should start unpressed");
+    }
+    check(controller.read(0, value) && value == 1,
+        "controller should return one after eight serial bits");
+    check(controller.read(0x4017, value) && value == 1,
+        "the second controller port should be unpressed");
 }
 
 void testBusRejectsOverlappingMappings() {
@@ -510,6 +538,62 @@ void testPpuRegistersAndBusMirror() {
                 "sprite palette mirror writes should reach the background slot");
         }
 
+        void testPpuDirtyTiles() {
+            Ppu ppu;
+            QVector<Ppu::DirtyTile> dirty = ppu.takeDirtyTiles();
+            check(dirty.size() == 4 * 32 * 30,
+                "PPU should initially invalidate every nametable tile");
+            check(ppu.takeDirtyTiles().isEmpty(),
+                "taking PPU dirty tiles should clear the batch");
+
+            ppu.write(0x2006, 0x20);
+            ppu.write(0x2006, 0x00);
+            ppu.write(0x2007, 0x01);
+            dirty = ppu.takeDirtyTiles();
+            check(dirty.size() == 2,
+                "horizontal mirroring should dirty both logical aliases");
+            check(ppu.takeDirtyTiles().isEmpty(),
+                "repeated dirty reads should return an empty batch");
+
+            ppu.write(0x2006, 0x23);
+            ppu.write(0x2006, 0xC0);
+            ppu.write(0x2007, 0x01);
+            dirty = ppu.takeDirtyTiles();
+            check(dirty.size() == 32,
+                "an attribute write should dirty both aliases of sixteen tiles");
+
+            ppu.write(0x2000, 0x10);
+            dirty = ppu.takeDirtyTiles();
+            check(dirty.size() == 4 * 32 * 30,
+                "pattern table changes should invalidate all nametable tiles");
+        }
+
+        void testPpuWriteStats() {
+            Ppu ppu;
+
+            ppu.write(0x2000, 0x10);
+            ppu.write(0x2003, 0x20);
+            ppu.write(0x2004, 0xAA);
+            ppu.write(0x2005, 0x00);
+            ppu.write(0x2005, 0x00);
+            ppu.write(0x2006, 0x3F);
+            ppu.write(0x2006, 0x01);
+            ppu.write(0x2007, 0x2A);
+
+            Ppu::WriteStats stats = ppu.takeWriteStats();
+            check(stats.controlWrites == 1, "PPUCTRL writes should be counted");
+            check(stats.oamAddressWrites == 1, "OAMADDR writes should be counted");
+            check(stats.oamDataWrites == 1, "OAMDATA writes should be counted");
+            check(stats.scrollWrites == 2, "PPUSCROLL writes should be counted");
+            check(stats.addressWrites == 2, "PPUADDR writes should be counted");
+            check(stats.dataWrites == 1 && stats.paletteWrites == 1,
+                "PPUDATA palette writes should be classified");
+            check(stats.lastMemoryAddress == 0x3F01,
+                "PPUDATA stats should retain the last target address");
+            check(ppu.takeWriteStats().dataWrites == 0,
+                "taking PPU write stats should clear the batch");
+        }
+
         void testPpuNametableRendering() {
             Ppu ppu;
             ppu.setNametableMirroring(Ppu::NametableMirroring::Vertical);
@@ -610,6 +694,7 @@ int main() {
     testInesMapper000Load();
     testChrRamInesLoad();
     testCpuPpuBusIsolation();
+    testControllerSerialRead();
     testBusRejectsOverlappingMappings();
     testNesClockRatio();
     testNtscMasterFrame();
@@ -618,6 +703,8 @@ int main() {
     testPpuRegistersAndBusMirror();
     testPpuVblankAndNmiTiming();
     testPpuMemoryMirrors();
+    testPpuDirtyTiles();
+    testPpuWriteStats();
     testPpuNametableRendering();
     testChrTileDecoder();
     std::cout << "NesCoreTests passed\n";

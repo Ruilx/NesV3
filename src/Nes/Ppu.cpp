@@ -37,6 +37,7 @@ Ppu::Ppu()
 	};
 	this->ppuBus.registerMapping(nametableMapping);
 	this->ppuBus.registerMapping(paletteMapping);
+	this->markAllTilesDirty();
 }
 
 bool Ppu::read(quint16 address, quint8 &value) {
@@ -69,25 +70,36 @@ bool Ppu::read(quint16 address, quint8 &value) {
 bool Ppu::write(quint16 address, quint8 value) {
 	switch (address & 0x0007) {
 	case 0x0000:
+	{
+		++this->writeStats.controlWrites;
 		if ((this->control & 0x80) == 0 && (value & 0x80) != 0 &&
 			(this->status & 0x80) != 0 && this->nmiCallback) {
 			this->nmiCallback();
 		}
+		const bool patternTableChanged = (this->control & 0x10) != (value & 0x10);
 		this->control = value;
 		this->temporaryAddress = static_cast<quint16>(
 			(this->temporaryAddress & 0xF3FF) | ((value & 0x03) << 10));
+		if (patternTableChanged) {
+			this->markAllTilesDirty();
+		}
 		return true;
+	}
 	case 0x0001:
+		++this->writeStats.maskWrites;
 		this->mask = value;
 		return true;
 	case 0x0003:
+		++this->writeStats.oamAddressWrites;
 		this->oamAddress = value;
 		return true;
 	case 0x0004:
+		++this->writeStats.oamDataWrites;
 		this->oam.setU8(this->oamAddress, value);
 		++this->oamAddress;
 		return true;
 	case 0x0005:
+		++this->writeStats.scrollWrites;
 		if (!this->writeToggle) {
 			this->fineX = value & 0x07;
 			this->temporaryAddress = static_cast<quint16>(
@@ -102,6 +114,7 @@ bool Ppu::write(quint16 address, quint8 value) {
 		}
 		return true;
 	case 0x0006:
+		++this->writeStats.addressWrites;
 		if (!this->writeToggle) {
 			this->temporaryAddress = static_cast<quint16>(
 				(this->temporaryAddress & 0x00FF) | ((value & 0x3F) << 8));
@@ -114,7 +127,21 @@ bool Ppu::write(quint16 address, quint8 value) {
 		}
 		return true;
 	case 0x0007:
-		this->ppuBus.write(this->currentAddress & 0x3FFF, value);
+		{
+			const quint16 address = static_cast<quint16>(this->currentAddress & 0x3FFF);
+			if (this->ppuBus.write(address, value) == Bus::AccessResult::Handled) {
+				++this->writeStats.dataWrites;
+				this->writeStats.lastMemoryAddress = address;
+				if (address < 0x2000) {
+					++this->writeStats.chrWrites;
+				} else if (address < 0x3F00) {
+					++this->writeStats.nametableWrites;
+				} else {
+					++this->writeStats.paletteWrites;
+				}
+				this->markMemoryWrite(address);
+			}
+		}
 		this->incrementAddress();
 		return true;
 	default:
@@ -144,11 +171,46 @@ void Ppu::setNmiCallback(NmiCallback callback) {
 }
 
 void Ppu::setNametableMirroring(NametableMirroring mirroring) {
+	if (this->nametableMirroringValue == mirroring) {
+		return;
+	}
 	this->nametableMirroringValue = mirroring;
+	this->markAllTilesDirty();
 }
 
 Ppu::NametableMirroring Ppu::nametableMirroring() const {
 	return this->nametableMirroringValue;
+}
+
+QVector<Ppu::DirtyTile> Ppu::takeDirtyTiles() {
+	QVector<DirtyTile> result;
+	result.reserve(4 * 32 * 30);
+	for (int nametable = 0; nametable < 4; ++nametable) {
+		for (int tileY = 0; tileY < 30; ++tileY) {
+			for (int tileX = 0; tileX < 32; ++tileX) {
+				const int index = this->dirtyTileIndex(nametable, tileX, tileY);
+				if (!this->dirtyTiles[static_cast<size_t>(index)]) {
+					continue;
+				}
+				result.append({
+					static_cast<quint8>(nametable),
+					static_cast<quint8>(tileX),
+					static_cast<quint8>(tileY)});
+				this->dirtyTiles[static_cast<size_t>(index)] = false;
+			}
+		}
+	}
+	return result;
+}
+
+Ppu::WriteStats Ppu::takeWriteStats() {
+	const WriteStats result = this->writeStats;
+	this->writeStats = {};
+	return result;
+}
+
+void Ppu::invalidateAllTiles() {
+	this->markAllTilesDirty();
 }
 
 bool Ppu::renderNametableTile(
@@ -224,7 +286,9 @@ void Ppu::reset() {
 	this->fineX = 0;
 	this->writeToggle = false;
 	this->readBuffer = 0;
+	this->writeStats = {};
 	this->resetClock();
+	this->markAllTilesDirty();
 }
 
 quint64 Ppu::totalTicks() const {
@@ -273,6 +337,71 @@ Bus &Ppu::bus() {
 
 const Bus &Ppu::bus() const {
 	return this->ppuBus;
+}
+
+void Ppu::markMemoryWrite(quint16 address) {
+	const quint16 canonicalAddress = static_cast<quint16>(address & 0x3FFF);
+	if (canonicalAddress >= 0x2000 && canonicalAddress <= 0x2FFF) {
+		this->markNametableTileDirty(canonicalAddress);
+		return;
+	}
+	if (canonicalAddress >= 0x3000 && canonicalAddress <= 0x3EFF) {
+		this->markNametableTileDirty(static_cast<quint16>(
+			0x2000 | (canonicalAddress & 0x0FFF)));
+		return;
+	}
+	if (canonicalAddress >= 0x3F00) {
+		this->markAllTilesDirty();
+	}
+}
+
+void Ppu::markAllTilesDirty() {
+	this->dirtyTiles.fill(true);
+}
+
+void Ppu::markNametableTileDirty(quint16 address) {
+	const quint16 physicalAddress = this->translateNametableAddress(address);
+	const quint16 offset = static_cast<quint16>(physicalAddress & 0x03FF);
+	const bool attribute = offset >= 0x03C0;
+	for (int nametable = 0; nametable < 4; ++nametable) {
+		for (int tileY = 0; tileY < 30; ++tileY) {
+			for (int tileX = 0; tileX < 32; ++tileX) {
+				const quint16 logicalAddress = static_cast<quint16>(
+					0x2000 + nametable * 0x0400 +
+					(attribute ? 0x03C0 + (tileY / 4) * 8 + tileX / 4
+						: tileY * 32 + tileX));
+				if (this->translateNametableAddress(logicalAddress) != physicalAddress) {
+					continue;
+				}
+				if (attribute) {
+					this->markAttributeDirty(logicalAddress);
+				} else {
+					this->markLogicalTileDirty(nametable, tileX, tileY);
+				}
+			}
+		}
+	}
+}
+
+void Ppu::markAttributeDirty(quint16 address) {
+	const int nametable = static_cast<int>((address - 0x2000) / 0x0400);
+	const int attributeIndex = static_cast<int>((address - 0x2000) & 0x03FF) - 0x03C0;
+	const int attributeX = (attributeIndex % 8) * 4;
+	const int attributeY = (attributeIndex / 8) * 4;
+	for (int tileY = attributeY; tileY < attributeY + 4 && tileY < 30; ++tileY) {
+		for (int tileX = attributeX; tileX < attributeX + 4 && tileX < 32; ++tileX) {
+			this->markLogicalTileDirty(nametable, tileX, tileY);
+		}
+	}
+}
+
+void Ppu::markLogicalTileDirty(int nametable, int tileX, int tileY) {
+	this->dirtyTiles[static_cast<size_t>(
+		this->dirtyTileIndex(nametable, tileX, tileY))] = true;
+}
+
+int Ppu::dirtyTileIndex(int nametable, int tileX, int tileY) const {
+	return (nametable * 30 + tileY) * 32 + tileX;
 }
 
 quint16 Ppu::translateNametableAddress(quint16 address) const {

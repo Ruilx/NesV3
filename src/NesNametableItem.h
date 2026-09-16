@@ -2,7 +2,6 @@
 
 #include <QColor>
 #include <QGraphicsItem>
-#include <QImage>
 #include <QVector>
 
 #include "NesPalette.h"
@@ -27,11 +26,9 @@ public:
             const QVector<quint8> &subpalette);
 
 private:
-    void rebuildImage();
+    static constexpr int TileCount = (Width / 8) * (Height / 8);
 
-    QVector<quint8> pixels = QVector<quint8>(Width * Height, 0);
-    QVector<quint8> colorIndices = QVector<quint8>(Width * Height, 0);
+    QVector<class NesTileItem *> tiles;
     NesPalette palette;
     QVector<quint8> subpalette = {0x0F, 0x01, 0x21, 0x31};
-    QImage image;
 };

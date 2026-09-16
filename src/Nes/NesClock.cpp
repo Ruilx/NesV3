@@ -1,5 +1,7 @@
 #include "NesClock.h"
 
+#include <chrono>
+
 NesClock::NesClock(TickCallback cpuTick, TickCallback ppuTick)
     : NesClock(std::move(cpuTick), std::move(ppuTick), TimingProfile()) {
 }
@@ -15,7 +17,18 @@ NesClock::NesClock(
 
 void NesClock::tick() {
         if (this->ppuTickCallback) {
+        ++this->ppuCallbackCount;
+        const bool sample = (this->ppuCallbackCount & 0xFF) == 0;
+        const auto start = sample
+            ? std::chrono::steady_clock::now()
+            : std::chrono::steady_clock::time_point();
                 this->ppuTickCallback();
+        if (sample) {
+            this->timingStats.ppuNanoseconds += static_cast<quint64>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - start).count());
+            ++this->timingStats.ppuSamples;
+        }
         }
     ++this->ppuTicksValue;
 
@@ -23,7 +36,18 @@ void NesClock::tick() {
     if (this->cpuPhase == this->timingProfile.ppuTicksPerCpuCycle) {
         this->cpuPhase = 0;
         if (this->cpuTickCallback) {
+            ++this->cpuCallbackCount;
+            const bool sample = (this->cpuCallbackCount & 0xFF) == 0;
+            const auto start = sample
+                    ? std::chrono::steady_clock::now()
+                    : std::chrono::steady_clock::time_point();
             this->cpuTickCallback();
+            if (sample) {
+                this->timingStats.cpuNanoseconds += static_cast<quint64>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - start).count());
+                ++this->timingStats.cpuSamples;
+            }
         }
         ++this->cpuCyclesValue;
     }
@@ -44,6 +68,9 @@ void NesClock::reset() {
     this->cpuPhase = 0;
     this->ppuTicksValue = 0;
     this->cpuCyclesValue = 0;
+    this->cpuCallbackCount = 0;
+    this->ppuCallbackCount = 0;
+    this->timingStats = TimingStats();
 }
 
 quint64 NesClock::ppuTicks() const {
@@ -52,6 +79,12 @@ quint64 NesClock::ppuTicks() const {
 
 quint64 NesClock::cpuCycles() const {
     return this->cpuCyclesValue;
+}
+
+NesClock::TimingStats NesClock::takeTimingStats() {
+    const TimingStats result = this->timingStats;
+    this->timingStats = TimingStats();
+    return result;
 }
 
 void NesClock::runFrame() {
