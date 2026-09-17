@@ -3,6 +3,7 @@
 #include <QColor>
 #include <QGraphicsItem>
 #include <QVector>
+#include <QPointF>
 
 #include "NesPalette.h"
 
@@ -18,6 +19,7 @@ public:
 
     void setPalette(const NesPalette &palette);
     void setSubpalette(const QVector<quint8> &subpalette);
+    void setRasterScroll(const QVector<QPointF> &scrollByScanline);
     void setTilePixels(int tileX, int tileY, const QVector<quint8> &pixels);
         void setTilePixels(
             int tileX,

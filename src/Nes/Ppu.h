@@ -10,6 +10,48 @@
 class Ppu final : public BusDevice {
 public:
 	using NmiCallback = std::function<void()>;
+	using OamDmaCallback = std::function<void(quint8)>;
+	enum class SpriteLimitMode : quint8 {
+		HardwareAccurate,
+		Unlimited,
+	};
+	struct SpriteEntry {
+		quint8 index = 0;
+		quint8 y = 0;
+		quint8 tile = 0;
+		quint8 attributes = 0;
+		quint8 x = 0;
+	};
+	struct SpriteEvaluation {
+		QVector<SpriteEntry> sprites;
+		bool overflow = false;
+	};
+	struct SpriteRender {
+		quint8 width = 0;
+		quint8 height = 0;
+		QVector<quint8> pixels;
+		QVector<quint8> paletteIndices;
+	};
+	struct SpritePixel {
+		quint8 paletteIndex = 0;
+		bool spriteOpaque = false;
+		bool sprite0Hit = false;
+	};
+	struct SpriteOutput {
+		SpriteEntry entry;
+		SpriteRender render;
+		quint8 screenX = 0;
+		quint16 screenY = 0;
+	};
+	struct BackgroundFrame {
+		QVector<quint8> paletteIndices;
+		quint16 width = 256;
+		quint16 height = 240;
+	};
+	struct ScrollSnapshot {
+		int x = 0;
+		int y = 0;
+	};
 	struct DirtyTile {
 		quint8 nametable = 0;
 		quint8 tileX = 0;
@@ -42,6 +84,22 @@ public:
 	void clock();
 	void resetClock();
 	void setNmiCallback(NmiCallback callback);
+	void setOamDmaCallback(OamDmaCallback callback);
+	void setSpriteLimitMode(SpriteLimitMode mode);
+	[[nodiscard]] SpriteLimitMode spriteLimitMode() const;
+	[[nodiscard]] SpriteEvaluation evaluateSpritesForScanline(
+		quint16 scanline);
+	[[nodiscard]] bool renderSprite(
+		const SpriteEntry &sprite,
+		SpriteRender &renderedSprite);
+	[[nodiscard]] QVector<SpriteOutput> renderSpritesForFrame();
+	[[nodiscard]] SpritePixel composeSpritePixel(
+		quint8 backgroundPixel,
+		quint8 backgroundPaletteIndex,
+		quint8 spritePixel,
+		quint8 spritePaletteIndex,
+		bool spriteBehindBackground,
+		bool spriteZero) const;
 	void setNametableMirroring(NametableMirroring mirroring);
 	[[nodiscard]] NametableMirroring nametableMirroring() const;
 	[[nodiscard]] QVector<DirtyTile> takeDirtyTiles();
@@ -53,6 +111,9 @@ public:
 			int tileY,
 			QVector<quint8> &pixels,
 			QVector<quint8> &subpalette);
+	[[nodiscard]] bool renderBackgroundFrame(BackgroundFrame &frame);
+	[[nodiscard]] ScrollSnapshot scrollSnapshot() const;
+	[[nodiscard]] QVector<ScrollSnapshot> rasterScroll() const;
 	[[nodiscard]] quint64 totalTicks() const;
 	[[nodiscard]] quint16 scanline() const;
 	[[nodiscard]] quint16 dot() const;
@@ -60,6 +121,7 @@ public:
 
 	[[nodiscard]] Bus &bus();
 	[[nodiscard]] const Bus &bus() const;
+	void writeOamDmaByte(quint8 value);
 	void reset();
 
 private:
@@ -83,7 +145,10 @@ private:
 	quint16 scanlineValue = 0;
 	quint16 dotValue = 0;
 	quint64 frameValue = 0;
+	QVector<ScrollSnapshot> rasterScrollValue;
 	NmiCallback nmiCallback;
+	OamDmaCallback oamDmaCallback;
+	SpriteLimitMode spriteLimitModeValue = SpriteLimitMode::HardwareAccurate;
 	NametableMirroring nametableMirroringValue = NametableMirroring::Horizontal;
 	std::array<bool, 4 * 32 * 30> dirtyTiles{};
 	WriteStats writeStats;
@@ -95,6 +160,12 @@ private:
 	void markNametableTileDirty(quint16 address);
 	void markAttributeDirty(quint16 address);
 	void markLogicalTileDirty(int nametable, int tileX, int tileY);
+	void checkSprite0Hit(quint16 scanline, quint16 dot);
+	[[nodiscard]] bool sampleBackgroundPixel(
+		int screenX,
+		int screenY,
+		quint8 &pixel,
+		quint8 &paletteIndex);
 	[[nodiscard]] int dirtyTileIndex(int nametable, int tileX, int tileY) const;
 	[[nodiscard]] quint16 translateNametableAddress(quint16 address) const;
 };

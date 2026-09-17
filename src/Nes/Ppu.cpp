@@ -2,6 +2,8 @@
 
 #include "ChrTileDecoder.h"
 
+#include <algorithm>
+
 Ppu::Ppu()
 	: ppuBus(0x4000),
 	  nametableRam(0x1000),
@@ -38,6 +40,9 @@ Ppu::Ppu()
 	this->ppuBus.registerMapping(nametableMapping);
 	this->ppuBus.registerMapping(paletteMapping);
 	this->markAllTilesDirty();
+	this->rasterScrollValue.resize(240);
+	const ScrollSnapshot initialScroll = this->scrollSnapshot();
+	std::fill(this->rasterScrollValue.begin(), this->rasterScrollValue.end(), initialScroll);
 }
 
 bool Ppu::read(quint16 address, quint8 &value) {
@@ -68,6 +73,13 @@ bool Ppu::read(quint16 address, quint8 &value) {
 }
 
 bool Ppu::write(quint16 address, quint8 value) {
+	if (address == 0x4014) {
+		if (this->oamDmaCallback) {
+			this->oamDmaCallback(value);
+		}
+		return true;
+	}
+
 	switch (address & 0x0007) {
 	case 0x0000:
 	{
@@ -164,10 +176,185 @@ void Ppu::resetClock() {
 	this->scanlineValue = 0;
 	this->dotValue = 0;
 	this->frameValue = 0;
+	if (this->rasterScrollValue.size() != 240) {
+		this->rasterScrollValue.resize(240);
+	}
+	const ScrollSnapshot initialScroll = this->scrollSnapshot();
+	std::fill(this->rasterScrollValue.begin(), this->rasterScrollValue.end(), initialScroll);
 }
 
 void Ppu::setNmiCallback(NmiCallback callback) {
 	this->nmiCallback = std::move(callback);
+}
+
+void Ppu::setOamDmaCallback(OamDmaCallback callback) {
+	this->oamDmaCallback = std::move(callback);
+}
+
+void Ppu::setSpriteLimitMode(SpriteLimitMode mode) {
+	this->spriteLimitModeValue = mode;
+}
+
+Ppu::SpriteLimitMode Ppu::spriteLimitMode() const {
+	return this->spriteLimitModeValue;
+}
+
+Ppu::SpriteEvaluation Ppu::evaluateSpritesForScanline(quint16 scanline) {
+	SpriteEvaluation result;
+	if (scanline >= 240) {
+		return result;
+	}
+
+	const int spriteHeight = (this->control & 0x20) != 0 ? 16 : 8;
+	const int maximumSprites = this->spriteLimitModeValue == SpriteLimitMode::Unlimited
+		? 64
+		: 8;
+	for (int index = 0; index < 64; ++index) {
+		const quint16 address = static_cast<quint16>(index * 4);
+		const int top = static_cast<int>(this->oam.getU8(address)) + 1;
+		if (static_cast<int>(scanline) < top
+			|| static_cast<int>(scanline) >= top + spriteHeight) {
+			continue;
+		}
+
+		if (static_cast<int>(result.sprites.size()) >= maximumSprites) {
+			result.overflow = true;
+			continue;
+		}
+
+		result.sprites.append({
+			.index = static_cast<quint8>(index),
+			.y = this->oam.getU8(address),
+			.tile = this->oam.getU8(static_cast<quint16>(address + 1)),
+			.attributes = this->oam.getU8(static_cast<quint16>(address + 2)),
+			.x = this->oam.getU8(static_cast<quint16>(address + 3)),
+		});
+	}
+	if (result.overflow && this->spriteLimitModeValue == SpriteLimitMode::HardwareAccurate) {
+		this->status |= 0x20;
+	}
+	return result;
+}
+
+bool Ppu::renderSprite(
+	const SpriteEntry &sprite,
+	SpriteRender &renderedSprite) {
+	const bool tallSprite = (this->control & 0x20) != 0;
+	const int width = 8;
+	const int height = tallSprite ? 16 : 8;
+	const bool flipHorizontal = (sprite.attributes & 0x40) != 0;
+	const bool flipVertical = (sprite.attributes & 0x80) != 0;
+	const quint8 paletteNumber = static_cast<quint8>(sprite.attributes & 0x03);
+	QVector<quint8> firstTile;
+	QVector<quint8> secondTile;
+
+	if (tallSprite) {
+		const ChrTileDecoder::PatternTable patternTable =
+			(sprite.tile & 0x01) != 0
+			? ChrTileDecoder::PatternTable::Upper
+			: ChrTileDecoder::PatternTable::Lower;
+		const quint16 tileIndex = static_cast<quint16>(sprite.tile & 0xFE);
+		if (!ChrTileDecoder::decodeTile(
+				this->ppuBus, tileIndex, patternTable, firstTile)
+			|| !ChrTileDecoder::decodeTile(
+				this->ppuBus, static_cast<quint16>(tileIndex + 1),
+				patternTable, secondTile)) {
+			renderedSprite = {};
+			return false;
+		}
+	} else {
+		const ChrTileDecoder::PatternTable patternTable =
+			(this->control & 0x08) != 0
+			? ChrTileDecoder::PatternTable::Upper
+			: ChrTileDecoder::PatternTable::Lower;
+		if (!ChrTileDecoder::decodeTile(
+				this->ppuBus, sprite.tile, patternTable, firstTile)) {
+			renderedSprite = {};
+			return false;
+		}
+	}
+
+	renderedSprite.width = static_cast<quint8>(width);
+	renderedSprite.height = static_cast<quint8>(height);
+	renderedSprite.pixels.resize(width * height);
+	renderedSprite.paletteIndices.resize(width * height);
+	for (int y = 0; y < height; ++y) {
+		const int sourceY = flipVertical ? height - 1 - y : y;
+		const QVector<quint8> &tile = sourceY < 8 ? firstTile : secondTile;
+		const int tileY = sourceY & 0x07;
+		for (int x = 0; x < width; ++x) {
+			const int sourceX = flipHorizontal ? width - 1 - x : x;
+			const quint8 pixel = tile[tileY * width + sourceX];
+			const int outputIndex = y * width + x;
+			renderedSprite.pixels[outputIndex] = pixel;
+			if (pixel == 0) {
+				renderedSprite.paletteIndices[outputIndex] = 0;
+				continue;
+			}
+
+			quint8 paletteIndex = this->ppuBus.openBusValue();
+			const quint16 paletteAddress = static_cast<quint16>(
+				0x3F10 + paletteNumber * 4 + pixel);
+			if (this->ppuBus.read(paletteAddress, paletteIndex)
+					!= Bus::AccessResult::Handled) {
+				renderedSprite = {};
+				return false;
+			}
+			renderedSprite.paletteIndices[outputIndex] = paletteIndex;
+		}
+	}
+	return true;
+}
+
+QVector<Ppu::SpriteOutput> Ppu::renderSpritesForFrame() {
+	QVector<SpriteOutput> outputs;
+	if ((this->mask & 0x10) == 0) {
+		return outputs;
+	}
+
+	outputs.reserve(64);
+	for (int index = 0; index < 64; ++index) {
+		const quint16 address = static_cast<quint16>(index * 4);
+		const SpriteEntry entry{
+			.index = static_cast<quint8>(index),
+			.y = this->oam.getU8(address),
+			.tile = this->oam.getU8(static_cast<quint16>(address + 1)),
+			.attributes = this->oam.getU8(static_cast<quint16>(address + 2)),
+			.x = this->oam.getU8(static_cast<quint16>(address + 3)),
+		};
+		SpriteRender renderedSprite;
+		if (!this->renderSprite(entry, renderedSprite)) {
+			continue;
+		}
+		outputs.append({
+			.entry = entry,
+			.render = renderedSprite,
+			.screenX = entry.x,
+			.screenY = static_cast<quint16>(entry.y + 1),
+		});
+	}
+	return outputs;
+}
+
+Ppu::SpritePixel Ppu::composeSpritePixel(
+	quint8 backgroundPixel,
+	quint8 backgroundPaletteIndex,
+	quint8 spritePixel,
+	quint8 spritePaletteIndex,
+	bool spriteBehindBackground,
+	bool spriteZero) const {
+	SpritePixel result;
+	result.spriteOpaque = spritePixel != 0;
+	result.sprite0Hit = spriteZero
+		&& result.spriteOpaque
+		&& backgroundPixel != 0;
+	if (!result.spriteOpaque
+		|| (spriteBehindBackground && backgroundPixel != 0)) {
+		result.paletteIndex = backgroundPaletteIndex;
+		return result;
+	}
+	result.paletteIndex = spritePaletteIndex;
+	return result;
 }
 
 void Ppu::setNametableMirroring(NametableMirroring mirroring) {
@@ -276,6 +463,113 @@ bool Ppu::renderNametableTile(
 			this->ppuBus, tileIndex, patternTable, pixels);
 }
 
+bool Ppu::sampleBackgroundPixel(
+	int screenX,
+	int screenY,
+	quint8 &pixel,
+	quint8 &paletteIndex) {
+	if (screenX < 0 || screenX >= 256 || screenY < 0 || screenY >= 240) {
+		return false;
+	}
+
+	const int coarseScrollX = this->temporaryAddress & 0x001F;
+	const int coarseScrollY = (this->temporaryAddress >> 5) & 0x001F;
+	const int fineScrollY = (this->temporaryAddress >> 12) & 0x0007;
+	const int baseNametableX = (this->temporaryAddress >> 10) & 0x01;
+	const int baseNametableY = (this->temporaryAddress >> 11) & 0x01;
+	const int worldX = baseNametableX * 256
+		+ coarseScrollX * 8 + this->fineX + screenX;
+	const int worldY = baseNametableY * 240
+		+ coarseScrollY * 8 + fineScrollY + screenY;
+	const int nametableX = (worldX / 256) & 0x01;
+	const int nametableY = (worldY / 240) & 0x01;
+	const int nametable = (nametableX + nametableY * 2) & 0x03;
+	const int localX = worldX & 0x00FF;
+	const int localY = worldY % 240;
+	const int tileX = localX / 8;
+	const int tileY = localY / 8;
+	QVector<quint8> tilePixels;
+	QVector<quint8> subpalette;
+	if (!this->renderNametableTile(
+		nametable, tileX, tileY, tilePixels, subpalette)
+		|| tilePixels.size() != 64 || subpalette.size() != 4) {
+		return false;
+	}
+
+	pixel = tilePixels[(localY & 0x07) * 8 + (localX & 0x07)];
+	paletteIndex = subpalette[pixel & 0x03];
+	return true;
+}
+
+bool Ppu::renderBackgroundFrame(BackgroundFrame &frame) {
+	frame.width = 256;
+	frame.height = 240;
+	frame.paletteIndices.resize(frame.width * frame.height);
+	std::array<QVector<quint8>, 4 * 32 * 30> tilePixelsCache;
+	std::array<QVector<quint8>, 4 * 32 * 30> subpaletteCache;
+	std::array<bool, 4 * 32 * 30> tileCacheValid{};
+	for (int screenY = 0; screenY < frame.height; ++screenY) {
+		for (int screenX = 0; screenX < frame.width; ++screenX) {
+			const int coarseScrollX = this->temporaryAddress & 0x001F;
+			const int coarseScrollY = (this->temporaryAddress >> 5) & 0x001F;
+			const int fineScrollY = (this->temporaryAddress >> 12) & 0x0007;
+			const int baseNametableX = (this->temporaryAddress >> 10) & 0x01;
+			const int baseNametableY = (this->temporaryAddress >> 11) & 0x01;
+			const int worldX = baseNametableX * 256
+				+ coarseScrollX * 8 + this->fineX + screenX;
+			const int worldY = baseNametableY * 240
+				+ coarseScrollY * 8 + fineScrollY + screenY;
+			const int nametableX = (worldX / 256) & 0x01;
+			const int nametableY = (worldY / 240) & 0x01;
+			const int nametable = (nametableX + nametableY * 2) & 0x03;
+			const int localX = worldX & 0x00FF;
+			const int localY = worldY % 240;
+			const int tileX = localX / 8;
+			const int tileY = localY / 8;
+			const int cacheIndex = (nametable * 30 + tileY) * 32 + tileX;
+			if (!tileCacheValid[static_cast<size_t>(cacheIndex)]) {
+				if (!this->renderNametableTile(
+					nametable, tileX, tileY,
+					tilePixelsCache[static_cast<size_t>(cacheIndex)],
+					subpaletteCache[static_cast<size_t>(cacheIndex)])) {
+					frame.paletteIndices.clear();
+					return false;
+				}
+				tileCacheValid[static_cast<size_t>(cacheIndex)] = true;
+			}
+
+			const QVector<quint8> &tilePixels =
+				tilePixelsCache[static_cast<size_t>(cacheIndex)];
+			const QVector<quint8> &subpalette =
+				subpaletteCache[static_cast<size_t>(cacheIndex)];
+			if (tilePixels.size() != 64 || subpalette.size() != 4) {
+				frame.paletteIndices.clear();
+				return false;
+			}
+			const quint8 pixel = tilePixels[(localY & 0x07) * 8 + (localX & 0x07)];
+			frame.paletteIndices[screenY * frame.width + screenX] =
+				subpalette[pixel & 0x03];
+		}
+	}
+	return true;
+}
+
+Ppu::ScrollSnapshot Ppu::scrollSnapshot() const {
+	const int coarseScrollX = this->temporaryAddress & 0x001F;
+	const int coarseScrollY = (this->temporaryAddress >> 5) & 0x001F;
+	const int fineScrollY = (this->temporaryAddress >> 12) & 0x0007;
+	const int baseNametableX = (this->temporaryAddress >> 10) & 0x01;
+	const int baseNametableY = (this->temporaryAddress >> 11) & 0x01;
+	return {
+		.x = baseNametableX * 256 + coarseScrollX * 8 + this->fineX,
+		.y = baseNametableY * 240 + coarseScrollY * 8 + fineScrollY,
+	};
+}
+
+QVector<Ppu::ScrollSnapshot> Ppu::rasterScroll() const {
+	return this->rasterScrollValue;
+}
+
 void Ppu::reset() {
 	this->control = 0;
 	this->mask = 0;
@@ -309,6 +603,11 @@ quint64 Ppu::frame() const {
 
 void Ppu::advanceTiming() {
 	++this->dotValue;
+	if (this->scanlineValue < 240 && this->dotValue >= 1
+		&& this->dotValue <= 256) {
+		this->checkSprite0Hit(
+			this->scanlineValue, this->dotValue);
+	}
 	if (this->dotValue != 341) {
 		if (this->scanlineValue == 241 && this->dotValue == 1) {
 			this->status |= 0x80;
@@ -329,6 +628,10 @@ void Ppu::advanceTiming() {
 		this->scanlineValue = 0;
 		++this->frameValue;
 	}
+	if (this->scanlineValue < 240) {
+		this->rasterScrollValue[static_cast<int>(this->scanlineValue)] =
+			this->scrollSnapshot();
+	}
 }
 
 Bus &Ppu::bus() {
@@ -337,6 +640,58 @@ Bus &Ppu::bus() {
 
 const Bus &Ppu::bus() const {
 	return this->ppuBus;
+}
+
+void Ppu::checkSprite0Hit(quint16 scanline, quint16 dot) {
+	if ((this->status & 0x40) != 0
+		|| (this->mask & 0x18) != 0x18) {
+		return;
+	}
+
+	const SpriteEvaluation evaluation = this->evaluateSpritesForScanline(scanline);
+	const auto spriteIterator = std::find_if(
+		evaluation.sprites.cbegin(), evaluation.sprites.cend(),
+		[](const SpriteEntry &sprite) { return sprite.index == 0; });
+	if (spriteIterator == evaluation.sprites.cend()) {
+		return;
+	}
+
+	const SpriteEntry &sprite = *spriteIterator;
+	const int screenX = static_cast<int>(dot) - 1;
+	const int spriteTop = static_cast<int>(sprite.y) + 1;
+	const int spriteX = screenX - static_cast<int>(sprite.x);
+	const int spriteY = static_cast<int>(scanline) - spriteTop;
+	if (spriteX < 0 || spriteX >= 8 || spriteY < 0) {
+		return;
+	}
+	if (screenX < 8 && (this->mask & 0x06) != 0x06) {
+		return;
+	}
+
+	SpriteRender renderedSprite;
+	if (!this->renderSprite(sprite, renderedSprite)
+		|| spriteY >= renderedSprite.height) {
+		return;
+	}
+
+	quint8 backgroundPixel = 0;
+	quint8 backgroundPaletteIndex = 0;
+	if (!this->sampleBackgroundPixel(
+		screenX, static_cast<int>(scanline),
+		backgroundPixel, backgroundPaletteIndex)) {
+		return;
+	}
+	const int spritePixelIndex = spriteY * 8 + spriteX;
+	const SpritePixel composed = this->composeSpritePixel(
+		backgroundPixel,
+		backgroundPaletteIndex,
+		renderedSprite.pixels[spritePixelIndex],
+		renderedSprite.paletteIndices[spritePixelIndex],
+		(sprite.attributes & 0x20) != 0,
+		true);
+	if (composed.sprite0Hit) {
+		this->status |= 0x40;
+	}
 }
 
 void Ppu::markMemoryWrite(quint16 address) {
@@ -415,4 +770,9 @@ quint16 Ppu::translateNametableAddress(quint16 address) const {
 		physicalTable = static_cast<quint16>((table >> 1) & 0x01);
 	}
 	return static_cast<quint16>(physicalTable * 0x0400 + inner);
+}
+
+void Ppu::writeOamDmaByte(quint8 value) {
+	this->oam.setU8(this->oamAddress, value);
+	++this->oamAddress;
 }

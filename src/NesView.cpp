@@ -6,6 +6,7 @@
 #include <QMouseEvent>
 #include <QScrollBar>
 #include <QWheelEvent>
+#include <QDebug>
 
 #include <algorithm>
 
@@ -143,10 +144,16 @@ void NesView::keyPressEvent(QKeyEvent *event) {
     }
 
     if (!handled) {
+        qInfo().noquote() << "NesView key press ignored: key=" << event->key()
+                          << "text=" << event->text()
+                          << "autoRepeat=" << event->isAutoRepeat();
         QGraphicsView::keyPressEvent(event);
         return;
     }
 
+    qInfo().noquote() << "NesView key press accepted: key=" << event->key()
+                      << "button=" << button
+                      << "autoRepeat=" << event->isAutoRepeat();
     emit this->buttonChanged(button, true);
     updateScrollTimer();
     event->accept();
@@ -196,10 +203,16 @@ void NesView::keyReleaseEvent(QKeyEvent *event) {
     }
 
     if (!handled) {
+        qInfo().noquote() << "NesView key release ignored: key=" << event->key()
+                          << "text=" << event->text()
+                          << "autoRepeat=" << event->isAutoRepeat();
         QGraphicsView::keyReleaseEvent(event);
         return;
     }
 
+    qInfo().noquote() << "NesView key release accepted: key=" << event->key()
+                      << "button=" << button
+                      << "autoRepeat=" << event->isAutoRepeat();
     emit this->buttonChanged(button, false);
     updateScrollTimer();
     event->accept();

@@ -9,6 +9,8 @@
 #include "NesPalette.h"
 
 class NesNametableItem;
+class NesSpriteItem;
+class NesFrameItem;
 class Ppu;
 
 class NesScene : public QGraphicsScene {
@@ -56,8 +58,12 @@ private:
     };
 
     void createDemoNametables();
+    void createFrameItem();
     void createViewportFrame();
+    void createSpriteItems();
+    void updateSpritesFromPpu(Ppu &ppu);
     void layoutNametableCopies();
+    void layoutNametableCopies(qreal x, qreal y);
     [[nodiscard]] int tileCacheIndex(int nametable, int tileX, int tileY) const;
 
     struct TileState {
@@ -70,6 +76,8 @@ private:
     QHash<quint64, QVector<NesNametableItem *>> tiles;
     QVector<TileState> tileStates;
     QVector<NametablePlacement> placements;
+    NesFrameItem *frameItem = nullptr;
+    QVector<NesSpriteItem *> spriteItems;
     QPointF scroll = QPointF(0, 0);
     UpdateStats updateStats;
 };

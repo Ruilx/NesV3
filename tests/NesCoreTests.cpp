@@ -225,6 +225,11 @@ void testControllerSerialRead() {
         "controller should return one after eight serial bits");
     check(controller.read(0x4017, value) && value == 1,
         "the second controller port should be unpressed");
+    const Controller::ReadStats stats = controller.takeReadStats();
+    check(stats.port1Reads == 9 && stats.port2Reads == 1,
+        "controller read stats should separate the two ports");
+    check(stats.strobeWrites == 2 && stats.lastPort1Bit == 1,
+        "controller stats should track strobe writes and last bit");
 }
 
 void testBusRejectsOverlappingMappings() {
@@ -490,6 +495,274 @@ void testPpuRegistersAndBusMirror() {
     check(cpu.readRam8(0x2004) == 0xA1, "OAMDATA should read the first byte");
 }
 
+void testOamDma() {
+    Nes nes;
+    for (quint16 offset = 0; offset < 0x0100; ++offset) {
+        nes.cpu().writeRam(offset, static_cast<quint8>(offset ^ 0x5A));
+    }
+
+    nes.cpu().writeRam(0x2003, 0x40);
+    nes.cpu().writeRam(0x4014, 0x00);
+    check(nes.cpu().getDmaCycles() == 513,
+        "OAM DMA should stall for 513 cycles on an even CPU cycle");
+
+    for (int oamAddress = 0; oamAddress < 0x100; ++oamAddress) {
+        nes.cpu().writeRam(0x2003, static_cast<quint8>(oamAddress));
+        const int sourceOffset = (oamAddress - 0x40) & 0xFF;
+        check(nes.cpu().readRam8(0x2004) ==
+                static_cast<quint8>(sourceOffset ^ 0x5A),
+            "OAM DMA should copy one complete CPU page into OAM");
+    }
+}
+
+void testSpriteEvaluation() {
+    Ppu ppu;
+    for (int index = 0; index < 64; ++index) {
+        ppu.write(0x2003, static_cast<quint8>(index * 4));
+        ppu.write(0x2004, 0xFF);
+        ppu.write(0x2004, static_cast<quint8>(index));
+        ppu.write(0x2004, 0x00);
+        ppu.write(0x2004, static_cast<quint8>(index * 4));
+    }
+
+    ppu.write(0x2003, 0x00);
+    for (int index = 0; index < 9; ++index) {
+        ppu.write(0x2004, 0x09);
+        ppu.write(0x2004, static_cast<quint8>(index));
+        ppu.write(0x2004, 0x00);
+        ppu.write(0x2004, static_cast<quint8>(index * 8));
+    }
+
+    Ppu::SpriteEvaluation evaluation = ppu.evaluateSpritesForScanline(10);
+    check(evaluation.sprites.size() == 8,
+        "hardware Sprite evaluation should return at most eight sprites");
+    check(evaluation.sprites[0].index == 0 && evaluation.sprites[7].index == 7,
+        "Sprite evaluation should preserve OAM order");
+    check(evaluation.overflow, "ninth visible Sprite should set overflow");
+
+    quint8 status = 0;
+    ppu.read(0x2002, status);
+    check((status & 0x20) != 0, "Sprite overflow should appear in PPUSTATUS");
+
+    ppu.reset();
+    ppu.setSpriteLimitMode(Ppu::SpriteLimitMode::Unlimited);
+    ppu.write(0x2003, 0x00);
+    for (int index = 0; index < 64; ++index) {
+        ppu.write(0x2004, 0x09);
+        ppu.write(0x2004, static_cast<quint8>(index));
+        ppu.write(0x2004, 0x00);
+        ppu.write(0x2004, static_cast<quint8>(index * 4));
+    }
+    evaluation = ppu.evaluateSpritesForScanline(10);
+    check(evaluation.sprites.size() == 64,
+        "unlimited Sprite evaluation should return all visible sprites");
+    check(!evaluation.overflow,
+        "unlimited Sprite evaluation should not set hardware overflow");
+
+    ppu.reset();
+    ppu.write(0x2000, 0x00);
+    ppu.write(0x2003, 0x00);
+    ppu.write(0x2004, 230);
+    ppu.write(0x2004, 0x12);
+    ppu.write(0x2004, 0x00);
+    ppu.write(0x2004, 0x00);
+    evaluation = ppu.evaluateSpritesForScanline(239);
+    check(evaluation.sprites.isEmpty(),
+        "8x8 Sprite evaluation should stop after the eighth row");
+
+    ppu.write(0x2000, 0x20);
+    evaluation = ppu.evaluateSpritesForScanline(239);
+    check(evaluation.sprites.size() == 1,
+        "8x16 Sprite evaluation should include the lower tile rows");
+}
+
+void testSpriteRendering() {
+    Ppu ppu;
+    Ram chrRam(0x2000);
+    RamBusDevice chrDevice(chrRam);
+    const Bus::Mapping chrMapping{
+        .start = 0x0000,
+        .end = 0x1FFF,
+        .priority = 0,
+        .flags = AccessFlags::Readable,
+        .name = QStringLiteral("Sprite rendering CHR"),
+        .device = &chrDevice,
+    };
+    check(ppu.bus().registerMapping(chrMapping) != 0,
+        "Sprite rendering CHR mapping should register");
+
+    chrRam.setU8(0x0000, 0x80);
+    chrRam.setU8(0x0007, 0x01);
+    ppu.bus().write(0x3F11, 0x2A);
+
+    Ppu::SpriteEntry sprite{
+        .index = 0,
+        .y = 0,
+        .tile = 0,
+        .attributes = 0,
+        .x = 0,
+    };
+    Ppu::SpriteRender rendered;
+    check(ppu.renderSprite(sprite, rendered),
+        "8x8 Sprite should render from CHR and palette RAM");
+    check(rendered.width == 8 && rendered.height == 8,
+        "8x8 Sprite should have an 8 by 8 render size");
+    check(rendered.pixels[0] == 1 && rendered.pixels[63] == 1,
+        "Sprite pattern pixels should decode from both horizontal edges");
+    check(rendered.pixels[1] == 0 && rendered.paletteIndices[1] == 0,
+        "transparent Sprite pixels should have no palette index");
+    check(rendered.paletteIndices[0] == 0x2A,
+        "opaque Sprite pixels should use the selected Sprite palette");
+
+    sprite.attributes = 0xC0;
+    check(ppu.renderSprite(sprite, rendered),
+        "flipped Sprite should render successfully");
+    check(rendered.pixels[0] == 1 && rendered.pixels[63] == 1,
+        "symmetric Sprite pattern should remain valid when flipped");
+
+    ppu.write(0x2000, 0x20);
+    chrRam.setU8(0x0010, 0x80);
+    chrRam.setU8(0x0018, 0x40);
+    sprite.tile = 0;
+    sprite.attributes = 0;
+    check(ppu.renderSprite(sprite, rendered),
+        "8x16 Sprite should combine the even and odd tile indices");
+    check(rendered.width == 8 && rendered.height == 16,
+        "8x16 Sprite should have an 8 by 16 render size");
+    check(rendered.pixels[64] == 1,
+        "8x16 Sprite should render the second tile below the first");
+}
+
+void testSpriteFrameOutput() {
+    Ppu ppu;
+    Ram chrRam(0x2000);
+    RamBusDevice chrDevice(chrRam);
+    const Bus::Mapping chrMapping{
+        .start = 0x0000,
+        .end = 0x1FFF,
+        .priority = 0,
+        .flags = AccessFlags::Readable,
+        .name = QStringLiteral("Sprite frame CHR"),
+        .device = &chrDevice,
+    };
+    check(ppu.bus().registerMapping(chrMapping) != 0,
+        "Sprite frame CHR mapping should register");
+    chrRam.setU8(0x0000, 0x80);
+    ppu.bus().write(0x3F11, 0x2A);
+    ppu.write(0x2001, 0x10);
+    ppu.write(0x2003, 0x00);
+    ppu.write(0x2004, 0x10);
+    ppu.write(0x2004, 0x00);
+    ppu.write(0x2004, 0x00);
+    ppu.write(0x2004, 0x04);
+
+    const QVector<Ppu::SpriteOutput> sprites = ppu.renderSpritesForFrame();
+    check(sprites.size() == 64,
+        "Sprite frame output should preserve all OAM entries");
+    check(sprites[0].screenX == 4 && sprites[0].screenY == 17,
+        "Sprite frame output should convert OAM coordinates to screen coordinates");
+    check(sprites[0].render.width == 8 && sprites[0].render.height == 8,
+        "Sprite frame output should retain the rendered dimensions");
+    check(sprites[0].render.pixels[0] == 1
+            && sprites[0].render.paletteIndices[0] == 0x2A,
+        "Sprite frame output should retain opaque pixels and palette indices");
+
+    ppu.write(0x2001, 0x00);
+    check(ppu.renderSpritesForFrame().isEmpty(),
+        "disabled Sprite rendering should produce no frame output");
+}
+
+void testSpritePixelComposition() {
+    Ppu ppu;
+
+    Ppu::SpritePixel result = ppu.composeSpritePixel(
+        2, 0x12, 0, 0x25, false, true);
+    check(!result.spriteOpaque && !result.sprite0Hit
+            && result.paletteIndex == 0x12,
+        "transparent Sprite pixels should preserve the background");
+
+    result = ppu.composeSpritePixel(2, 0x12, 1, 0x25, false, true);
+    check(result.spriteOpaque && result.sprite0Hit
+            && result.paletteIndex == 0x25,
+        "front Sprite pixels should cover opaque background pixels");
+
+    result = ppu.composeSpritePixel(2, 0x12, 1, 0x25, true, true);
+    check(result.spriteOpaque && result.sprite0Hit
+            && result.paletteIndex == 0x12,
+        "behind Sprite pixels should preserve opaque background pixels");
+
+    result = ppu.composeSpritePixel(0, 0x12, 1, 0x25, true, false);
+    check(result.spriteOpaque && !result.sprite0Hit
+            && result.paletteIndex == 0x25,
+        "behind Sprite pixels should show through transparent background");
+}
+
+void testSprite0HitTiming() {
+    Ppu ppu;
+    Ram chrRam(0x2000);
+    RamBusDevice chrDevice(chrRam);
+    const Bus::Mapping chrMapping{
+        .start = 0x0000,
+        .end = 0x1FFF,
+        .priority = 0,
+        .flags = AccessFlags::Readable,
+        .name = QStringLiteral("Sprite 0 hit CHR"),
+        .device = &chrDevice,
+    };
+    check(ppu.bus().registerMapping(chrMapping) != 0,
+        "Sprite 0 hit CHR mapping should register");
+    chrRam.setU8(0x0000, 0x80);
+    chrRam.setU8(0x0001, 0x80);
+    check(ppu.bus().write(0x2000, 0x00) == Bus::AccessResult::Handled,
+        "Sprite 0 hit background tile should be writable");
+    ppu.write(0x2000, 0x00);
+    ppu.write(0x2001, 0x1E);
+    ppu.write(0x2003, 0x00);
+    ppu.write(0x2004, 0x00);
+    ppu.write(0x2004, 0x00);
+    ppu.write(0x2004, 0x00);
+    ppu.write(0x2004, 0x00);
+
+    for (int tick = 0; tick < 341 + 1; ++tick) {
+        ppu.clock();
+    }
+    quint8 status = 0;
+    ppu.read(0x2002, status);
+    check((status & 0x40) != 0,
+        "opaque Sprite 0 and background pixels should set Sprite 0 Hit");
+
+    ppu.read(0x2002, status);
+    check((status & 0x40) != 0,
+        "reading PPUSTATUS should preserve Sprite 0 Hit");
+
+    for (int tick = 0; tick < 260 * 341; ++tick) {
+        ppu.clock();
+    }
+    ppu.read(0x2002, status);
+    check((status & 0x40) == 0,
+        "pre-render should clear Sprite 0 Hit");
+
+    ppu.reset();
+    chrRam.setU8(0x0000, 0x00);
+    ppu.write(0x2001, 0x1E);
+    for (int tick = 0; tick < 341 + 1; ++tick) {
+        ppu.clock();
+    }
+    ppu.read(0x2002, status);
+    check((status & 0x40) == 0,
+        "transparent Sprite 0 pixels should not set Sprite 0 Hit");
+
+    ppu.reset();
+    chrRam.setU8(0x0000, 0x80);
+    ppu.write(0x2001, 0x08);
+    for (int tick = 0; tick < 341 + 1; ++tick) {
+        ppu.clock();
+    }
+    ppu.read(0x2002, status);
+    check((status & 0x40) == 0,
+        "disabled Sprite rendering should not set Sprite 0 Hit");
+}
+
     void testPpuVblankAndNmiTiming() {
         Nes nes;
         Cpu::CpuReg registers{};
@@ -641,6 +914,72 @@ void testPpuRegistersAndBusMirror() {
                 "vertical mirroring should share nametables 0 and 2");
         }
 
+        void testPpuBackgroundScrollFrame() {
+            Ppu ppu;
+            Ram chrRam(0x2000);
+            RamBusDevice chrDevice(chrRam);
+            const Bus::Mapping chrMapping{
+              .start = 0x0000,
+              .end = 0x1FFF,
+              .priority = 0,
+              .flags = AccessFlags::Readable,
+              .name = QStringLiteral("Scroll CHR"),
+              .device = &chrDevice,
+            };
+            check(ppu.bus().registerMapping(chrMapping) != 0,
+                "scroll CHR mapping should register");
+
+            chrRam.setU8(0x0000, 0x80);
+            chrRam.setU8(0x0010, 0x80);
+            chrRam.setU8(0x0018, 0x80);
+            ppu.bus().write(0x2000, 0x00);
+            ppu.bus().write(0x2001, 0x01);
+            ppu.bus().write(0x3F00, 0x0F);
+            ppu.bus().write(0x3F01, 0x11);
+            ppu.bus().write(0x3F02, 0x22);
+            ppu.bus().write(0x3F03, 0x33);
+
+            ppu.write(0x2005, 0x00);
+            ppu.write(0x2005, 0x00);
+            Ppu::BackgroundFrame frame;
+            check(ppu.renderBackgroundFrame(frame),
+                "PPU should render a scroll-aware background frame");
+            check(frame.paletteIndices.size() == 256 * 240,
+                "background frame should contain 256x240 palette indices");
+            check(frame.paletteIndices[0] == 0x11,
+                "zero scroll should sample the first nametable tile");
+
+            ppu.write(0x2005, 0x08);
+            ppu.write(0x2005, 0x00);
+            check(ppu.renderBackgroundFrame(frame),
+                "PPU should render after changing horizontal scroll");
+            check(frame.paletteIndices[0] == 0x33,
+                "horizontal scroll should sample the next nametable tile");
+        }
+
+        void testPpuRasterScrollSnapshots() {
+            Ppu ppu;
+            ppu.write(0x2005, 0x00);
+            ppu.write(0x2005, 0x00);
+            for (int tick = 0; tick < 341; ++tick) {
+                ppu.clock();
+            }
+
+            ppu.write(0x2005, 0x08);
+            ppu.write(0x2005, 0x00);
+            for (int tick = 0; tick < 341; ++tick) {
+                ppu.clock();
+            }
+
+            const QVector<Ppu::ScrollSnapshot> rasterScroll = ppu.rasterScroll();
+            check(rasterScroll.size() == 240,
+                "PPU should expose one scroll snapshot per visible scanline");
+            check(rasterScroll[1].x == 0,
+                "scroll writes should not retroactively change the previous scanline");
+            check(rasterScroll[2].x == 8,
+                "scroll writes should apply to subsequent scanlines");
+        }
+
         void testChrTileDecoder() {
             Bus chrBus(0x4000);
             Ram chrRam(0x2000);
@@ -701,11 +1040,19 @@ int main() {
     testCpuBasicExecution();
     testCpuCycleAndBranchTiming();
     testPpuRegistersAndBusMirror();
+    testOamDma();
+    testSpriteEvaluation();
+    testSpriteRendering();
+    testSpriteFrameOutput();
+    testSpritePixelComposition();
+    testSprite0HitTiming();
     testPpuVblankAndNmiTiming();
     testPpuMemoryMirrors();
     testPpuDirtyTiles();
     testPpuWriteStats();
     testPpuNametableRendering();
+    testPpuBackgroundScrollFrame();
+    testPpuRasterScrollSnapshots();
     testChrTileDecoder();
     std::cout << "NesCoreTests passed\n";
     return EXIT_SUCCESS;

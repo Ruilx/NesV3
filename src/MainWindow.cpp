@@ -52,6 +52,8 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent) {
         }
         this->nes.controller().setButton(
             static_cast<Controller::Button>(button), pressed);
+        qInfo().noquote() << "Controller button update: button=" << button
+                          << "pressed=" << pressed;
     });
     this->scene = new NesScene(view);
     this->scene->setPalette(loadStoredPalette());
@@ -150,6 +152,10 @@ void MainWindow::openRom() {
     this->simulationTimer.start();
     this->currentRomPath = path;
     updateWindowTitle();
+    if (auto *view = qobject_cast<NesView *>(this->centralWidget())) {
+        view->setFocus(Qt::OtherFocusReason);
+        qInfo() << "NesView focus restored after ROM load:" << view->hasFocus();
+    }
 }
 
 void MainWindow::closeRom() {
@@ -197,6 +203,9 @@ void MainWindow::runSimulationFrame() {
     const NesTileItem::PaintStats tileStats = NesTileItem::paintStats();
     const NesClock::TimingStats clockStats = this->nes.clock().takeTimingStats();
     const Ppu::WriteStats ppuWriteStats = this->nes.ppu().takeWriteStats();
+    const Controller::ReadStats controllerStats =
+        this->nes.controller().takeReadStats();
+    const Cpu::ExecutionStats cpuStats = this->nes.cpu().takeExecutionStats();
     const double simulationFps = this->performanceFrameCount / seconds;
     const double averageCoreMs = this->performanceCoreNanoseconds
         / static_cast<double>(this->performanceFrameCount) / 1000000.0;
@@ -211,20 +220,29 @@ void MainWindow::runSimulationFrame() {
         : clockStats.ppuNanoseconds
             / static_cast<double>(clockStats.ppuSamples) / 1000.0;
     const QString message = QStringLiteral(
-        "FPS %1 | core %2 ms (CPU %3 us, PPU %4 us) | scene %5 ms | dirty %6 | decode %7 | update %8 | paint %9 | PPU writes CHR %10 NT %11 PAL %12 OAM %13")
+        "FPS %1 | core %2 ms (CPU %3 us, PPU %4 us) | PC %5:%6 ins %7 NMI %8 KILLED %9 | scene %10 ms | dirty %11 | decode %12 | update %13 | tile update %14 rebuild %15 paint %16 | PPU writes CHR %17 NT %18 PAL %19 OAM %20 | pad reads %21 strobe %22")
         .arg(simulationFps, 0, 'f', 1)
         .arg(averageCoreMs, 0, 'f', 3)
         .arg(averageCpuUs, 0, 'f', 1)
         .arg(averagePpuUs, 0, 'f', 1)
+        .arg(QString::number(cpuStats.lastPc, 16).rightJustified(4, QLatin1Char('0')))
+        .arg(QString::number(cpuStats.lastOpcode, 16).rightJustified(2, QLatin1Char('0')))
+        .arg(cpuStats.instructions)
+        .arg(cpuStats.nmiEntries)
+        .arg(cpuStats.killedInstructions)
         .arg(averageSceneMs, 0, 'f', 3)
         .arg(this->performanceDirtyTiles)
         .arg(this->performanceDecodedTiles)
         .arg(this->performanceUpdatedTiles)
+        .arg(tileStats.updateRequests)
+        .arg(tileStats.imageRebuilds)
         .arg(tileStats.paintCalls)
         .arg(ppuWriteStats.chrWrites)
         .arg(ppuWriteStats.nametableWrites)
         .arg(ppuWriteStats.paletteWrites)
-        .arg(ppuWriteStats.oamDataWrites);
+        .arg(ppuWriteStats.oamDataWrites)
+        .arg(controllerStats.port1Reads)
+        .arg(controllerStats.strobeWrites);
     this->statusBar()->showMessage(message);
     qInfo().noquote() << message;
 

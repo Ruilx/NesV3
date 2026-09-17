@@ -2,6 +2,8 @@
 
 #include "NesNametableItem.h"
 #include "NesPalette.h"
+#include "NesFrameItem.h"
+#include "NesSpriteItem.h"
 #include "Ppu.h"
 
 #include <QGraphicsRectItem>
@@ -56,6 +58,8 @@ NesScene::NesScene(QObject *parent) : QGraphicsScene(parent) {
     this->tileStates.resize(NametableColumns * NametableRows * TilesWide * TilesHigh);
 
     createDemoNametables();
+    createFrameItem();
+    createSpriteItems();
     createViewportFrame();
 }
 
@@ -97,6 +101,22 @@ void NesScene::updateFromPpu(Ppu &ppu) {
     QElapsedTimer elapsedTimer;
     elapsedTimer.start();
     const QVector<Ppu::DirtyTile> dirtyTiles = ppu.takeDirtyTiles();
+    const Ppu::ScrollSnapshot scrollSnapshot = ppu.scrollSnapshot();
+    const QVector<Ppu::ScrollSnapshot> rasterScroll = ppu.rasterScroll();
+    QVector<QPointF> scrollByScanline;
+    scrollByScanline.reserve(rasterScroll.size());
+    for (const Ppu::ScrollSnapshot &snapshot : rasterScroll) {
+        scrollByScanline.append(QPointF(snapshot.x, snapshot.y));
+    }
+    if (!rasterScroll.isEmpty()) {
+        layoutNametableCopies(rasterScroll.constFirst().x, rasterScroll.constFirst().y);
+    } else {
+        layoutNametableCopies(scrollSnapshot.x, scrollSnapshot.y);
+    }
+    for (const NametablePlacement &placement : this->placements) {
+        placement.item->setRasterScroll(scrollByScanline);
+    }
+    updateSpritesFromPpu(ppu);
     this->updateStats.dirtyTiles += static_cast<quint64>(dirtyTiles.size());
     bool fullUpdate = false;
     for (const TileState &state : this->tileStates) {
@@ -161,6 +181,7 @@ void NesScene::invalidateTileCache() {
 
 void NesScene::setPalette(const NesPalette &palette) {
     this->nesPalette = palette;
+    this->frameItem->setPalette(palette);
     for (const NametablePlacement &placement : this->placements) {
         placement.item->setPalette(this->nesPalette);
     }
@@ -220,15 +241,26 @@ void NesScene::createDemoNametables() {
     layoutNametableCopies();
 }
 
+void NesScene::createFrameItem() {
+    this->frameItem = new NesFrameItem;
+    this->frameItem->setZValue(100.0);
+    this->frameItem->setVisible(false);
+    addItem(this->frameItem);
+}
+
 void NesScene::layoutNametableCopies() {
+    layoutNametableCopies(this->scroll.x(), this->scroll.y());
+}
+
+void NesScene::layoutNametableCopies(qreal scrollX, qreal scrollY) {
     for (const NametablePlacement &placement : this->placements) {
-        const qreal x = wrappedItemPosition(
-            placement.basePosition.x(), this->scroll.x(),
+        const qreal positionX = wrappedItemPosition(
+            placement.basePosition.x(), scrollX,
             NametableWidth * NametableColumns, NametableWidth);
-        const qreal y = wrappedItemPosition(
-            placement.basePosition.y(), this->scroll.y(),
+        const qreal positionY = wrappedItemPosition(
+            placement.basePosition.y(), scrollY,
             NametableHeight * NametableRows, NametableHeight);
-        placement.item->setPos(x, y);
+        placement.item->setPos(positionX, positionY);
     }
 }
 
@@ -240,4 +272,34 @@ void NesScene::createViewportFrame() {
     auto *frame = addRect(nesViewportRect(), QPen(QColor(255, 255, 255, 220), 1), Qt::NoBrush);
     frame->setZValue(1000.0);
     frame->setFlag(QGraphicsItem::ItemIgnoresTransformations, false);
+}
+
+void NesScene::createSpriteItems() {
+    this->spriteItems.reserve(64);
+    for (int index = 0; index < 64; ++index) {
+        auto *spriteItem = new NesSpriteItem;
+        spriteItem->setZValue(500.0 + index);
+        addItem(spriteItem);
+        this->spriteItems.append(spriteItem);
+    }
+}
+
+void NesScene::updateSpritesFromPpu(Ppu &ppu) {
+    const QVector<Ppu::SpriteOutput> sprites = ppu.renderSpritesForFrame();
+    for (int index = 0; index < this->spriteItems.size(); ++index) {
+        NesSpriteItem *item = this->spriteItems[index];
+        if (index >= sprites.size()) {
+            item->setVisibleSprite(false);
+            continue;
+        }
+
+        const Ppu::SpriteOutput &sprite = sprites[index];
+        item->setPos(sprite.screenX, sprite.screenY);
+        item->setSprite(
+            sprite.render.width,
+            sprite.render.height,
+            sprite.render.pixels,
+            sprite.render.paletteIndices,
+            this->nesPalette);
+    }
 }

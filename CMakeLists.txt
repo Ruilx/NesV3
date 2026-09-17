@@ -35,6 +35,10 @@ set(PROJECT_SOURCES
 		src/NesNametableItem.h
 		src/NesTileItem.cpp
 		src/NesTileItem.h
+		src/NesSpriteItem.cpp
+		src/NesSpriteItem.h
+		src/NesFrameItem.cpp
+		src/NesFrameItem.h
 		${TS_FILES}
 		src/Excption/OutOfRangeError.cpp
 		src/Excption/OutOfRangeError.h

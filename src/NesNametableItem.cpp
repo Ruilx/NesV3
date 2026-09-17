@@ -42,6 +42,22 @@ void NesNametableItem::setSubpalette(const QVector<quint8> &subpalette) {
     this->subpalette = subpalette;
 }
 
+void NesNametableItem::setRasterScroll(const QVector<QPointF> &scrollByScanline) {
+    if (scrollByScanline.isEmpty()) {
+        return;
+    }
+
+    const QPointF firstScroll = scrollByScanline.constFirst();
+    for (int tileY = 0; tileY < Height / 8; ++tileY) {
+        const int scanline = qMin(tileY * 8, scrollByScanline.size() - 1);
+        const QPointF delta = firstScroll - scrollByScanline.at(scanline);
+        for (int tileX = 0; tileX < Width / 8; ++tileX) {
+            this->tiles.value(tileY * (Width / 8) + tileX)->setPos(
+                tileX * 8 + delta.x(), tileY * 8 + delta.y());
+        }
+    }
+}
+
 void NesNametableItem::setTilePixels(int tileX, int tileY, const QVector<quint8> &tilePixels) {
 	setTilePixels(tileX, tileY, tilePixels, this->subpalette);
 }

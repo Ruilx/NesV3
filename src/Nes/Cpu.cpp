@@ -48,13 +48,18 @@ quint8 Cpu::op8(quint16 addr) {
 quint8 Cpu::executeInstruction() {
     if (this->reg.intPending & Cpu::NmiFlag) {
         this->clearIrq(Cpu::NmiFlag);
+        ++this->executionStats.nmiEntries;
         return this->_nmi();
     }
     if ((this->reg.intPending & Cpu::IrqFlag) && !(this->reg.p & Cpu::IFlag)) {
         this->clearIrq(Cpu::IrqFlag);
         return this->_irq();
     }
+    const quint16 instructionPc = this->reg.pc;
     const quint8 opcode = this->op8(this->reg.pc++);
+    ++this->executionStats.instructions;
+    this->executionStats.lastPc = instructionPc;
+    this->executionStats.lastOpcode = opcode;
     return (this->*this->operations[opcode])();
 }
 
@@ -877,7 +882,11 @@ quint8 Cpu::DOP__2(){ reg.pc++;                                      return 2; }
 quint8 Cpu::DOP__3(){ reg.pc++;                                      return 3; } // 0x04, 0x44, 0x64
 quint8 Cpu::DOP__4(){ reg.pc++;                                      return 4; } // 0x14, 0x34, 0x54, 0x74, 0xD4, 0xF4
 quint8 Cpu::TOPREL(){ reg.pc++; reg.pc++;                              return 4; } // 0x0C, 0x1C, 0x3C, 0x5C, 0x7C, 0xDC, 0xFC
-quint8 Cpu::KILLED(){ this->reg.pc--; return 1; } // 0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xB2, 0xD2, 0xF2
+quint8 Cpu::KILLED(){
+    ++this->executionStats.killedInstructions;
+    this->reg.pc--;
+    return 1;
+} // 0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xB2, 0xD2, 0xF2
 
 
 void Cpu::reset(){
@@ -892,6 +901,7 @@ void Cpu::reset(){
     this->totalCycles = 0;
     this->dmaCycles = 0;
     this->instructionCyclesRemaining = 0;
+    this->executionStats = {};
 
     this->znTable[0] = Cpu::ZFlag;
     for (quint16 i = 1; i < 256; ++i) {
@@ -970,4 +980,10 @@ void Cpu::setDmaCycles(quint64 value) { this->dmaCycles = value; }
 quint64 Cpu::getTotalCycles() const { return this->totalCycles; }
 
 void Cpu::setTotalCycles(quint64 value) { this->totalCycles = value; }
+
+Cpu::ExecutionStats Cpu::takeExecutionStats() {
+    const ExecutionStats result = this->executionStats;
+    this->executionStats = {};
+    return result;
+}
 

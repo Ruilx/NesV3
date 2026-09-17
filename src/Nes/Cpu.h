@@ -62,12 +62,20 @@ public:
         quint8 s;
         CpuInterrupt intPending; // interrupt pending flag
     } CpuReg, R6502;
+    struct ExecutionStats {
+        quint64 instructions = 0;
+        quint64 nmiEntries = 0;
+        quint64 killedInstructions = 0;
+        quint16 lastPc = 0;
+        quint8 lastOpcode = 0;
+    };
 private:
     quint16 ea;
     quint16 et;
     quint16 wt;
     quint8 dt;
     quint8 instructionCyclesRemaining = 0;
+    ExecutionStats executionStats;
 
     quint8 op8(quint16 addr);
     quint16 op16(quint16 addr);
@@ -119,6 +127,8 @@ public:
     quint64 getTotalCycles() const;
 
     void setTotalCycles(quint64 value);
+
+    [[nodiscard]] ExecutionStats takeExecutionStats();
 
     void setContent(const CpuReg &reg) { this->reg = reg; }
 

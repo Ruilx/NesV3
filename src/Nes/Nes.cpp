@@ -13,6 +13,18 @@ Nes::Nes(NesClock::TimingProfile timing)
                     timing) {
                 this->ppuComponent.setNmiCallback(
                     [this]() { this->cpuComponent.nmi(); });
+                    this->ppuComponent.setOamDmaCallback(
+                        [this](quint8 page) {
+                        const quint16 base = static_cast<quint16>(page) << 8;
+                        for (quint16 offset = 0; offset < 0x0100; ++offset) {
+                            quint8 value = this->cpuComponent.bus().openBusValue();
+                            this->cpuComponent.bus().read(
+                                static_cast<quint16>(base + offset), value);
+                            this->ppuComponent.writeOamDmaByte(value);
+                        }
+                        this->cpuComponent.dma(
+                            513 + (this->cpuComponent.getTotalCycles() & 1));
+                        });
             const Bus::Mapping ppuRegisterMapping{
                 .start = 0x2000,
                 .end = 0x3FFF,
@@ -25,6 +37,18 @@ Nes::Nes(NesClock::TimingProfile timing)
                 },
             };
             this->cpuComponent.bus().registerMapping(ppuRegisterMapping);
+            const Bus::Mapping oamDmaMapping{
+                .start = 0x4014,
+                .end = 0x4014,
+                .priority = 0,
+                .flags = AccessFlags::Writable,
+                .name = QStringLiteral("OAM DMA"),
+                .device = &this->ppuComponent,
+                .translate = [](quint16) {
+                    return static_cast<quint16>(0x4014);
+                },
+            };
+            this->cpuComponent.bus().registerMapping(oamDmaMapping);
             const Bus::Mapping controllerMapping{
                 .start = 0x4016,
                 .end = 0x4017,
