@@ -19,22 +19,30 @@ Bus::MappingId Bus::registerMapping(const Mapping &mapping) {
     }
 
     const MappingId id = this->nextMappingId++;
-    this->mappings.insert(id, {id, mapping});
+    this->mappings.append({id, mapping});
     return id;
 }
 
 bool Bus::unregisterMapping(MappingId id) {
-    return this->mappings.remove(id) > 0;
+    for (qsizetype index = 0; index < this->mappings.size(); ++index) {
+        if (this->mappings[index].id != id) {
+            continue;
+        }
+        this->mappings.removeAt(index);
+        this->cachedMappingIndex = -1;
+        return true;
+    }
+    return false;
 }
 
 bool Bus::setMappingFlags(MappingId id, AccessFlags flags) {
-    auto iterator = this->mappings.find(id);
-    if (iterator == this->mappings.end()) {
-        return false;
+    for (RegisteredMapping &registered : this->mappings) {
+        if (registered.id == id) {
+            registered.mapping.flags = flags;
+            return true;
+        }
     }
-
-    iterator->mapping.flags = flags;
-    return true;
+    return false;
 }
 
 Bus::AccessResult Bus::read(quint16 address, quint8 &value) {
@@ -96,8 +104,18 @@ quint32 Bus::addressSpaceSize() const {
 }
 
 const Bus::RegisteredMapping *Bus::findMapping(quint16 address) const {
+    if (this->cachedMappingIndex >= 0
+        && this->cachedMappingIndex < this->mappings.size()) {
+        const RegisteredMapping &cached =
+            this->mappings[this->cachedMappingIndex];
+        if (address >= cached.mapping.start && address <= cached.mapping.end) {
+            return &cached;
+        }
+    }
+
     const RegisteredMapping *best = nullptr;
-    for (const RegisteredMapping &registered : this->mappings) {
+    for (qsizetype index = 0; index < this->mappings.size(); ++index) {
+        const RegisteredMapping &registered = this->mappings[index];
         const Mapping &mapping = registered.mapping;
         if (address < mapping.start || address > mapping.end) {
             continue;
@@ -105,6 +123,7 @@ const Bus::RegisteredMapping *Bus::findMapping(quint16 address) const {
 
         if (best == nullptr || mapping.priority > best->mapping.priority) {
             best = &registered;
+            this->cachedMappingIndex = index;
         }
     }
     return best;

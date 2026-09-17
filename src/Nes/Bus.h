@@ -1,7 +1,7 @@
 #pragma once
 
-#include <QHash>
 #include <QString>
+#include <QVector>
 #include <QtGlobal>
 
 #include <functional>
@@ -81,7 +81,8 @@ private:
     quint32 addressSpaceSizeValue;
     quint8 openBus = 0;
     MappingId nextMappingId = 1;
-    QHash<MappingId, RegisteredMapping> mappings;
+    QVector<RegisteredMapping> mappings;
+    mutable qsizetype cachedMappingIndex = -1;
 };
 
 class RamBusDevice final : public BusDevice {
