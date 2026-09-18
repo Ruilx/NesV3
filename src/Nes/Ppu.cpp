@@ -90,6 +90,7 @@ bool Ppu::write(quint16 address, quint8 value) {
 		}
 		const bool patternTableChanged = (this->control & 0x10) != (value & 0x10);
 		this->control = value;
+		this->invalidateSprite0Cache();
 		this->temporaryAddress = static_cast<quint16>(
 			(this->temporaryAddress & 0xF3FF) | ((value & 0x03) << 10));
 		if (patternTableChanged) {
@@ -108,6 +109,7 @@ bool Ppu::write(quint16 address, quint8 value) {
 	case 0x0004:
 		++this->writeStats.oamDataWrites;
 		this->oam.setU8(this->oamAddress, value);
+		this->invalidateSprite0Cache();
 		++this->oamAddress;
 		return true;
 	case 0x0005:
@@ -146,6 +148,7 @@ bool Ppu::write(quint16 address, quint8 value) {
 				this->writeStats.lastMemoryAddress = address;
 				if (address < 0x2000) {
 					++this->writeStats.chrWrites;
+					this->sprite0RenderValid = false;
 				} else if (address < 0x3F00) {
 					++this->writeStats.nametableWrites;
 				} else {
@@ -581,6 +584,7 @@ void Ppu::reset() {
 	this->writeToggle = false;
 	this->readBuffer = 0;
 	this->writeStats = {};
+	this->invalidateSprite0Cache();
 	this->resetClock();
 	this->markAllTilesDirty();
 }
@@ -643,20 +647,32 @@ const Bus &Ppu::bus() const {
 }
 
 void Ppu::checkSprite0Hit(quint16 scanline, quint16 dot) {
+	++this->writeStats.sprite0HitChecks;
 	if ((this->status & 0x40) != 0
 		|| (this->mask & 0x18) != 0x18) {
 		return;
 	}
 
-	const SpriteEvaluation evaluation = this->evaluateSpritesForScanline(scanline);
-	const auto spriteIterator = std::find_if(
-		evaluation.sprites.cbegin(), evaluation.sprites.cend(),
-		[](const SpriteEntry &sprite) { return sprite.index == 0; });
-	if (spriteIterator == evaluation.sprites.cend()) {
+	if (!this->sprite0EvaluationValid
+		|| this->sprite0EvaluationScanline != scanline) {
+		++this->writeStats.sprite0HitEvaluations;
+		const SpriteEvaluation evaluation = this->evaluateSpritesForScanline(scanline);
+		const auto spriteIterator = std::find_if(
+			evaluation.sprites.cbegin(), evaluation.sprites.cend(),
+			[](const SpriteEntry &sprite) { return sprite.index == 0; });
+		this->sprite0EvaluationScanline = scanline;
+		this->sprite0EvaluationValid = true;
+		this->sprite0Present = spriteIterator != evaluation.sprites.cend();
+		this->sprite0RenderValid = false;
+		if (this->sprite0Present) {
+			this->cachedSprite0 = *spriteIterator;
+		}
+	}
+	if (!this->sprite0Present) {
 		return;
 	}
 
-	const SpriteEntry &sprite = *spriteIterator;
+	const SpriteEntry &sprite = this->cachedSprite0;
 	const int screenX = static_cast<int>(dot) - 1;
 	const int spriteTop = static_cast<int>(sprite.y) + 1;
 	const int spriteX = screenX - static_cast<int>(sprite.x);
@@ -668,14 +684,19 @@ void Ppu::checkSprite0Hit(quint16 scanline, quint16 dot) {
 		return;
 	}
 
-	SpriteRender renderedSprite;
-	if (!this->renderSprite(sprite, renderedSprite)
-		|| spriteY >= renderedSprite.height) {
+	if (!this->sprite0RenderValid) {
+		++this->writeStats.sprite0HitRenders;
+		this->sprite0RenderValid = this->renderSprite(
+			sprite, this->cachedSprite0Render);
+	}
+	if (!this->sprite0RenderValid
+		|| spriteY >= this->cachedSprite0Render.height) {
 		return;
 	}
 
 	quint8 backgroundPixel = 0;
 	quint8 backgroundPaletteIndex = 0;
+	++this->writeStats.sprite0HitSamples;
 	if (!this->sampleBackgroundPixel(
 		screenX, static_cast<int>(scanline),
 		backgroundPixel, backgroundPaletteIndex)) {
@@ -685,13 +706,21 @@ void Ppu::checkSprite0Hit(quint16 scanline, quint16 dot) {
 	const SpritePixel composed = this->composeSpritePixel(
 		backgroundPixel,
 		backgroundPaletteIndex,
-		renderedSprite.pixels[spritePixelIndex],
-		renderedSprite.paletteIndices[spritePixelIndex],
+		this->cachedSprite0Render.pixels[spritePixelIndex],
+		this->cachedSprite0Render.paletteIndices[spritePixelIndex],
 		(sprite.attributes & 0x20) != 0,
 		true);
 	if (composed.sprite0Hit) {
 		this->status |= 0x40;
+		++this->writeStats.sprite0Hits;
 	}
+}
+
+void Ppu::invalidateSprite0Cache() {
+	this->sprite0EvaluationValid = false;
+	this->sprite0Present = false;
+	this->sprite0RenderValid = false;
+	this->cachedSprite0Render = {};
 }
 
 void Ppu::markMemoryWrite(quint16 address) {
@@ -774,5 +803,6 @@ quint16 Ppu::translateNametableAddress(quint16 address) const {
 
 void Ppu::writeOamDmaByte(quint8 value) {
 	this->oam.setU8(this->oamAddress, value);
+	this->invalidateSprite0Cache();
 	++this->oamAddress;
 }

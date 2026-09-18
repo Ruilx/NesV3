@@ -9,6 +9,7 @@
 #include "Nes.h"
 
 class NesScene;
+class NesView;
 
 class MainWindow : public QMainWindow
 {
@@ -26,9 +27,11 @@ private:
 	void closeRom();
 	void runSimulationFrame();
 	void updateWindowTitle();
+	void setDebugInputMode(bool enabled);
 
 	Nes nes;
 	NesScene *scene = nullptr;
+	NesView *view = nullptr;
 	QTimer simulationTimer;
 	QElapsedTimer performanceTimer;
 	quint64 performanceFrameCount = 0;

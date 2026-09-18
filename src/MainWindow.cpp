@@ -45,7 +45,8 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent) {
     this->resize(800, 600);
     this->setWindowTitle("NesV3");
 
-    auto *view = new NesView(this);
+    this->view = new NesView(this);
+    auto *view = this->view;
     connect(view, &NesView::buttonChanged, this, [this](int button, bool pressed) {
         if (button < 0 || button > 7) {
             return;
@@ -85,10 +86,28 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent) {
     connect(editPaletteAction, &QAction::triggered, this, &MainWindow::openPaletteEditor);
 
         auto *debugMenu = menuBar()->addMenu(tr("Debug"));
+        auto *debugScrollAction = debugMenu->addAction(tr("Debug Nametable Input"));
+        debugScrollAction->setCheckable(true);
+        debugScrollAction->setChecked(false);
+        connect(debugScrollAction, &QAction::toggled,
+            this, &MainWindow::setDebugInputMode);
+        debugMenu->addSeparator();
         auto *patternTableAction = debugMenu->addAction(tr("CHR Pattern Tables"));
         connect(patternTableAction, &QAction::triggered,
             this, &MainWindow::openPatternTableDialog);
         updateWindowTitle();
+}
+
+void MainWindow::setDebugInputMode(bool enabled) {
+    if (this->view == nullptr) {
+        return;
+    }
+
+    this->view->setInputMode(
+        enabled ? NesView::InputMode::Debug : NesView::InputMode::Game);
+    this->statusBar()->showMessage(
+        enabled ? tr("Input mode: Debug nametable")
+                : tr("Input mode: Game controller"));
 }
 
 MainWindow::~MainWindow() {
@@ -220,7 +239,7 @@ void MainWindow::runSimulationFrame() {
         : clockStats.ppuNanoseconds
             / static_cast<double>(clockStats.ppuSamples) / 1000.0;
     const QString message = QStringLiteral(
-        "FPS %1 | core %2 ms (CPU %3 us, PPU %4 us) | PC %5:%6 ins %7 NMI %8 KILLED %9 | scene %10 ms | dirty %11 | decode %12 | update %13 | tile update %14 rebuild %15 paint %16 | PPU writes CHR %17 NT %18 PAL %19 OAM %20 | pad reads %21 strobe %22")
+        "FPS %1 | core %2 ms (CPU %3 us, PPU %4 us) | PC %5:%6 ins %7 NMI %8 KILLED %9 | scene %10 ms | dirty %11 | decode %12 | update %13 | tile update %14 rebuild %15 paint %16 | PPU writes CHR %17 NT %18 PAL %19 OAM %20 hit check %21 eval %22 render %23 sample %24 hit %25 | pad reads %26 strobe %27")
         .arg(simulationFps, 0, 'f', 1)
         .arg(averageCoreMs, 0, 'f', 3)
         .arg(averageCpuUs, 0, 'f', 1)
@@ -241,6 +260,11 @@ void MainWindow::runSimulationFrame() {
         .arg(ppuWriteStats.nametableWrites)
         .arg(ppuWriteStats.paletteWrites)
         .arg(ppuWriteStats.oamDataWrites)
+        .arg(ppuWriteStats.sprite0HitChecks)
+        .arg(ppuWriteStats.sprite0HitEvaluations)
+        .arg(ppuWriteStats.sprite0HitRenders)
+        .arg(ppuWriteStats.sprite0HitSamples)
+        .arg(ppuWriteStats.sprite0Hits)
         .arg(controllerStats.port1Reads)
         .arg(controllerStats.strobeWrites);
     this->statusBar()->showMessage(message);

@@ -7,9 +7,16 @@ class NesView : public QGraphicsView {
     Q_OBJECT
 
 public:
+    enum class InputMode {
+        Game,
+        Debug,
+    };
+
     explicit NesView(QWidget *parent = nullptr);
 
     [[nodiscard]] qreal zoomFactor() const;
+    [[nodiscard]] InputMode inputMode() const;
+    void setInputMode(InputMode mode);
     void resetZoom();
 
 signals:
@@ -32,6 +39,7 @@ private:
     bool panning = false;
     QPoint lastMousePosition;
     QTimer scrollTimer;
+    InputMode currentInputMode = InputMode::Game;
     bool scrollLeft = false;
     bool scrollRight = false;
     bool scrollUp = false;

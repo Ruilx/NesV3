@@ -69,6 +69,11 @@ public:
 		quint64 nametableWrites = 0;
 		quint64 paletteWrites = 0;
 		quint16 lastMemoryAddress = 0;
+		quint64 sprite0HitChecks = 0;
+		quint64 sprite0HitEvaluations = 0;
+		quint64 sprite0HitRenders = 0;
+		quint64 sprite0HitSamples = 0;
+		quint64 sprite0Hits = 0;
 	};
 	enum class NametableMirroring : quint8 {
 		Horizontal,
@@ -152,6 +157,12 @@ private:
 	NametableMirroring nametableMirroringValue = NametableMirroring::Horizontal;
 	std::array<bool, 4 * 32 * 30> dirtyTiles{};
 	WriteStats writeStats;
+	quint16 sprite0EvaluationScanline = 0;
+	bool sprite0EvaluationValid = false;
+	bool sprite0Present = false;
+	SpriteEntry cachedSprite0;
+	bool sprite0RenderValid = false;
+	SpriteRender cachedSprite0Render;
 
 	void incrementAddress();
 	void advanceTiming();
@@ -160,6 +171,7 @@ private:
 	void markNametableTileDirty(quint16 address);
 	void markAttributeDirty(quint16 address);
 	void markLogicalTileDirty(int nametable, int tileX, int tileY);
+	void invalidateSprite0Cache();
 	void checkSprite0Hit(quint16 scanline, quint16 dot);
 	[[nodiscard]] bool sampleBackgroundPixel(
 		int screenX,

@@ -31,6 +31,23 @@ qreal NesView::zoomFactor() const {
     return this->zoom;
 }
 
+NesView::InputMode NesView::inputMode() const {
+    return this->currentInputMode;
+}
+
+void NesView::setInputMode(InputMode mode) {
+    if (this->currentInputMode == mode) {
+        return;
+    }
+
+    this->scrollLeft = false;
+    this->scrollRight = false;
+    this->scrollUp = false;
+    this->scrollDown = false;
+    this->scrollTimer.stop();
+    this->currentInputMode = mode;
+}
+
 void NesView::resetZoom() {
     const QPointF viewCenter = viewport()->rect().center();
     setZoomFactor(1.0, viewCenter);
@@ -110,32 +127,39 @@ void NesView::keyPressEvent(QKeyEvent *event) {
     bool handled = true;
     switch (event->key()) {
         case Qt::Key_Left:
-            this->scrollLeft = true;
             button = 6;
             break;
         case Qt::Key_Right:
-            this->scrollRight = true;
             button = 7;
             break;
         case Qt::Key_Up:
-            this->scrollUp = true;
             button = 4;
             break;
         case Qt::Key_Down:
-            this->scrollDown = true;
             button = 5;
             break;
-        case Qt::Key_Z:
+        case Qt::Key_A:
+            button = 6;
+            break;
+        case Qt::Key_D:
+            button = 7;
+            break;
+        case Qt::Key_W:
+            button = 4;
+            break;
+        case Qt::Key_S:
+            button = 5;
+            break;
+        case Qt::Key_H:
             button = 0;
             break;
-        case Qt::Key_X:
+        case Qt::Key_J:
             button = 1;
             break;
-        case Qt::Key_Shift:
+        case Qt::Key_V:
             button = 2;
             break;
-        case Qt::Key_Return:
-        case Qt::Key_Enter:
+        case Qt::Key_B:
             button = 3;
             break;
         default:
@@ -154,8 +178,27 @@ void NesView::keyPressEvent(QKeyEvent *event) {
     qInfo().noquote() << "NesView key press accepted: key=" << event->key()
                       << "button=" << button
                       << "autoRepeat=" << event->isAutoRepeat();
-    emit this->buttonChanged(button, true);
-    updateScrollTimer();
+    if (this->currentInputMode == InputMode::Debug) {
+        switch (event->key()) {
+            case Qt::Key_Left:
+                this->scrollLeft = true;
+                break;
+            case Qt::Key_Right:
+                this->scrollRight = true;
+                break;
+            case Qt::Key_Up:
+                this->scrollUp = true;
+                break;
+            case Qt::Key_Down:
+                this->scrollDown = true;
+                break;
+            default:
+                break;
+        }
+        updateScrollTimer();
+    } else {
+        emit this->buttonChanged(button, true);
+    }
     event->accept();
 }
 
@@ -169,32 +212,39 @@ void NesView::keyReleaseEvent(QKeyEvent *event) {
     bool handled = true;
     switch (event->key()) {
         case Qt::Key_Left:
-            this->scrollLeft = false;
             button = 6;
             break;
         case Qt::Key_Right:
-            this->scrollRight = false;
             button = 7;
             break;
         case Qt::Key_Up:
-            this->scrollUp = false;
             button = 4;
             break;
         case Qt::Key_Down:
-            this->scrollDown = false;
             button = 5;
             break;
-        case Qt::Key_Z:
+        case Qt::Key_A:
+            button = 6;
+            break;
+        case Qt::Key_D:
+            button = 7;
+            break;
+        case Qt::Key_W:
+            button = 4;
+            break;
+        case Qt::Key_S:
+            button = 5;
+            break;
+        case Qt::Key_H:
             button = 0;
             break;
-        case Qt::Key_X:
+        case Qt::Key_J:
             button = 1;
             break;
-        case Qt::Key_Shift:
+        case Qt::Key_V:
             button = 2;
             break;
-        case Qt::Key_Return:
-        case Qt::Key_Enter:
+        case Qt::Key_B:
             button = 3;
             break;
         default:
@@ -213,8 +263,27 @@ void NesView::keyReleaseEvent(QKeyEvent *event) {
     qInfo().noquote() << "NesView key release accepted: key=" << event->key()
                       << "button=" << button
                       << "autoRepeat=" << event->isAutoRepeat();
-    emit this->buttonChanged(button, false);
-    updateScrollTimer();
+    if (this->currentInputMode == InputMode::Debug) {
+        switch (event->key()) {
+            case Qt::Key_Left:
+                this->scrollLeft = false;
+                break;
+            case Qt::Key_Right:
+                this->scrollRight = false;
+                break;
+            case Qt::Key_Up:
+                this->scrollUp = false;
+                break;
+            case Qt::Key_Down:
+                this->scrollDown = false;
+                break;
+            default:
+                break;
+        }
+        updateScrollTimer();
+    } else {
+        emit this->buttonChanged(button, false);
+    }
     event->accept();
 }
 
