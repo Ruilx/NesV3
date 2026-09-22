@@ -26,9 +26,10 @@ qreal positiveModulo(qreal value, qreal period) {
 
 qreal wrappedItemPosition(qreal basePosition, qreal scrollOffset, qreal period, qreal viewportSize) {
     qreal position = basePosition - scrollOffset;
-    if (position < -viewportSize) {
+    while (position < -viewportSize) {
         position += period;
-    } else if (position > viewportSize) {
+    }
+    while (position > viewportSize) {
         position -= period;
     }
     return position;
@@ -114,7 +115,10 @@ void NesScene::updateFromPpu(Ppu &ppu) {
         layoutNametableCopies(scrollSnapshot.x, scrollSnapshot.y);
     }
     for (const NametablePlacement &placement : this->placements) {
-        placement.item->setRasterScroll(scrollByScanline);
+        placement.item->setRasterScroll(
+            scrollByScanline,
+            placement.basePosition,
+            placement.projectedPosition);
     }
     updateSpritesFromPpu(ppu);
     this->updateStats.dirtyTiles += static_cast<quint64>(dirtyTiles.size());
@@ -253,14 +257,20 @@ void NesScene::layoutNametableCopies() {
 }
 
 void NesScene::layoutNametableCopies(qreal scrollX, qreal scrollY) {
-    for (const NametablePlacement &placement : this->placements) {
+    for (NametablePlacement &placement : this->placements) {
         const qreal positionX = wrappedItemPosition(
             placement.basePosition.x(), scrollX,
             NametableWidth * NametableColumns, NametableWidth);
         const qreal positionY = wrappedItemPosition(
             placement.basePosition.y(), scrollY,
             NametableHeight * NametableRows, NametableHeight);
-        placement.item->setPos(positionX, positionY);
+        const QPointF projectedPosition(positionX, positionY);
+        if (!placement.hasProjectedPosition
+                || placement.projectedPosition != projectedPosition) {
+            placement.item->setPos(projectedPosition);
+            placement.projectedPosition = projectedPosition;
+            placement.hasProjectedPosition = true;
+        }
     }
 }
 

@@ -7,14 +7,32 @@
 #include <QPainter>
 #include <QStyleOptionGraphicsItem>
 
+#include <cmath>
+
+namespace {
+qreal wrappedCoordinate(qreal basePosition, qreal scrollOffset, qreal period, qreal viewportSize) {
+    qreal position = basePosition - scrollOffset;
+    while (position < -viewportSize) {
+        position += period;
+    }
+    while (position > viewportSize) {
+        position -= period;
+    }
+    return position;
+}
+}
+
 NesNametableItem::NesNametableItem(QGraphicsItem *parent)
     : QGraphicsItem(parent) {
     this->tiles.reserve(TileCount);
+    this->projectedTilePositions.reserve(TileCount);
     for (int tileY = 0; tileY < Height / 8; ++tileY) {
         for (int tileX = 0; tileX < Width / 8; ++tileX) {
             auto *tile = new NesTileItem(this);
-            tile->setPos(tileX * 8, tileY * 8);
+            const QPointF position(tileX * 8, tileY * 8);
+            tile->setPos(position);
             this->tiles.append(tile);
+            this->projectedTilePositions.append(position);
         }
     }
 }
@@ -42,18 +60,29 @@ void NesNametableItem::setSubpalette(const QVector<quint8> &subpalette) {
     this->subpalette = subpalette;
 }
 
-void NesNametableItem::setRasterScroll(const QVector<QPointF> &scrollByScanline) {
+void NesNametableItem::setRasterScroll(
+        const QVector<QPointF> &scrollByScanline,
+        const QPointF &basePosition,
+        const QPointF &parentPosition) {
     if (scrollByScanline.isEmpty()) {
         return;
     }
 
-    const QPointF firstScroll = scrollByScanline.constFirst();
     for (int tileY = 0; tileY < Height / 8; ++tileY) {
         const int scanline = qMin(tileY * 8, scrollByScanline.size() - 1);
-        const QPointF delta = firstScroll - scrollByScanline.at(scanline);
+        const QPointF rowScroll = scrollByScanline.at(scanline);
+        const QPointF rowNametablePosition(
+            wrappedCoordinate(basePosition.x(), rowScroll.x(), Width * 2, Width),
+            wrappedCoordinate(basePosition.y(), rowScroll.y(), Height * 2, Height));
         for (int tileX = 0; tileX < Width / 8; ++tileX) {
-            this->tiles.value(tileY * (Width / 8) + tileX)->setPos(
-                tileX * 8 + delta.x(), tileY * 8 + delta.y());
+            const int tileIndex = tileY * (Width / 8) + tileX;
+            const QPointF tilePosition(
+                tileX * 8 + rowNametablePosition.x() - parentPosition.x(),
+                tileY * 8 + rowNametablePosition.y() - parentPosition.y());
+            if (this->projectedTilePositions.at(tileIndex) != tilePosition) {
+                this->tiles.value(tileIndex)->setPos(tilePosition);
+                this->projectedTilePositions[tileIndex] = tilePosition;
+            }
         }
     }
 }

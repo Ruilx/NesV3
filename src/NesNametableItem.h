@@ -19,7 +19,10 @@ public:
 
     void setPalette(const NesPalette &palette);
     void setSubpalette(const QVector<quint8> &subpalette);
-    void setRasterScroll(const QVector<QPointF> &scrollByScanline);
+    void setRasterScroll(
+        const QVector<QPointF> &scrollByScanline,
+        const QPointF &basePosition,
+        const QPointF &projectedPosition);
     void setTilePixels(int tileX, int tileY, const QVector<quint8> &pixels);
         void setTilePixels(
             int tileX,
@@ -31,6 +34,7 @@ private:
     static constexpr int TileCount = (Width / 8) * (Height / 8);
 
     QVector<class NesTileItem *> tiles;
+    QVector<QPointF> projectedTilePositions;
     NesPalette palette;
     QVector<quint8> subpalette = {0x0F, 0x01, 0x21, 0x31};
 };

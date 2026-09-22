@@ -55,6 +55,8 @@ private:
         NesNametableItem *item = nullptr;
         int logicalNametable = 0;
         QPointF basePosition;
+        QPointF projectedPosition;
+        bool hasProjectedPosition = false;
     };
 
     void createDemoNametables();
