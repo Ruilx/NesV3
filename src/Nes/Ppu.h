@@ -123,6 +123,7 @@ public:
 	[[nodiscard]] quint16 scanline() const;
 	[[nodiscard]] quint16 dot() const;
 	[[nodiscard]] quint64 frame() const;
+	[[nodiscard]] quint8 universalBackgroundColor() const;
 
 	[[nodiscard]] Bus &bus();
 	[[nodiscard]] const Bus &bus() const;

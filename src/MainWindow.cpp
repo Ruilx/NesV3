@@ -239,7 +239,7 @@ void MainWindow::runSimulationFrame() {
         : clockStats.ppuNanoseconds
             / static_cast<double>(clockStats.ppuSamples) / 1000.0;
     const QString message = QStringLiteral(
-        "FPS %1 | core %2 ms (CPU %3 us, PPU %4 us) | PC %5:%6 ins %7 NMI %8 KILLED %9 | scene %10 ms | dirty %11 | decode %12 | update %13 | tile update %14 rebuild %15 paint %16 | PPU writes CHR %17 NT %18 PAL %19 OAM %20 hit check %21 eval %22 render %23 sample %24 hit %25 | pad reads %26 strobe %27")
+        "FPS %1 | core %2 ms (CPU %3 us, PPU %4 us) | PC %5:%6 ins %7 NMI %8 KILLED %9 | scene %10 ms | dirty %11 | decode %12 | update %13 | tile update %14 rebuild %15 paint %16 | PPU writes CHR %17 NT %18 PAL %19 OAM %20 hit check %21 eval %22 render %23 sample %24 hit %25 | pad P1 %26 P2 %27 strobe %28 buttons $%29 latched $%30 seen $%31 seenCount %32 bit %33")
         .arg(simulationFps, 0, 'f', 1)
         .arg(averageCoreMs, 0, 'f', 3)
         .arg(averageCpuUs, 0, 'f', 1)
@@ -266,7 +266,16 @@ void MainWindow::runSimulationFrame() {
         .arg(ppuWriteStats.sprite0HitSamples)
         .arg(ppuWriteStats.sprite0Hits)
         .arg(controllerStats.port1Reads)
-        .arg(controllerStats.strobeWrites);
+        .arg(controllerStats.port2Reads)
+        .arg(controllerStats.strobeWrites)
+        .arg(QString::number(controllerStats.currentButtons, 16)
+             .rightJustified(2, QLatin1Char('0')))
+        .arg(QString::number(controllerStats.lastLatchedButtons, 16)
+             .rightJustified(2, QLatin1Char('0')))
+           .arg(QString::number(controllerStats.lastNonZeroLatchedButtons, 16)
+               .rightJustified(2, QLatin1Char('0')))
+           .arg(controllerStats.nonZeroLatches)
+           .arg(controllerStats.lastPort1Bit);
     this->statusBar()->showMessage(message);
     qInfo().noquote() << message;
 

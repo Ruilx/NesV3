@@ -3,7 +3,7 @@
 bool Controller::read(quint16 address, quint8 &value) {
     if ((address & 0x0001) != 0) {
         ++this->readStats.port2Reads;
-        value = 1;
+        value = 0;
         return true;
     }
 
@@ -36,21 +36,34 @@ void Controller::setButton(Button button, bool pressed) {
     } else {
         this->buttons = static_cast<quint8>(this->buttons & ~mask);
     }
+    this->readStats.currentButtons = this->buttons;
 }
 
 void Controller::reset() {
     this->buttons = 0;
     this->shiftRegister = 0;
+    this->latchedButtons = 0;
+    this->lastNonZeroLatchedButtons = 0;
     this->strobe = false;
     this->readStats = {};
 }
 
 Controller::ReadStats Controller::takeReadStats() {
-    const ReadStats result = this->readStats;
+    ReadStats result = this->readStats;
+    result.currentButtons = this->buttons;
+    result.lastLatchedButtons = this->latchedButtons;
+    result.lastNonZeroLatchedButtons = this->lastNonZeroLatchedButtons;
     this->readStats = {};
     return result;
 }
 
 void Controller::latch() {
     this->shiftRegister = this->buttons;
+    this->latchedButtons = this->buttons;
+    this->readStats.lastLatchedButtons = this->buttons;
+    if (this->buttons != 0) {
+        this->lastNonZeroLatchedButtons = this->buttons;
+        this->readStats.lastNonZeroLatchedButtons = this->buttons;
+        ++this->readStats.nonZeroLatches;
+    }
 }

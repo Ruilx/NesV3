@@ -9,6 +9,10 @@ public:
         quint64 port2Reads = 0;
         quint64 strobeWrites = 0;
         quint8 lastPort1Bit = 0;
+        quint8 currentButtons = 0;
+        quint8 lastLatchedButtons = 0;
+        quint8 lastNonZeroLatchedButtons = 0;
+        quint64 nonZeroLatches = 0;
     };
 
     enum class Button : quint8 {
@@ -32,6 +36,8 @@ public:
 private:
     quint8 buttons = 0;
     quint8 shiftRegister = 0;
+    quint8 latchedButtons = 0;
+    quint8 lastNonZeroLatchedButtons = 0;
     bool strobe = false;
     ReadStats readStats;
 

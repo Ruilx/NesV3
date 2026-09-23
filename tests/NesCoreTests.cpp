@@ -223,13 +223,16 @@ void testControllerSerialRead() {
     }
     check(controller.read(0, value) && value == 1,
         "controller should return one after eight serial bits");
-    check(controller.read(0x4017, value) && value == 1,
-        "the second controller port should be unpressed");
+    check(controller.read(0x4017, value) && value == 0,
+        "the disconnected second controller port should read zero");
     const Controller::ReadStats stats = controller.takeReadStats();
     check(stats.port1Reads == 9 && stats.port2Reads == 1,
         "controller read stats should separate the two ports");
     check(stats.strobeWrites == 2 && stats.lastPort1Bit == 1,
         "controller stats should track strobe writes and last bit");
+    check(stats.lastNonZeroLatchedButtons == 0x09
+              && stats.nonZeroLatches == 2,
+        "controller stats should retain non-zero latched button values");
 }
 
 void testBusRejectsOverlappingMappings() {

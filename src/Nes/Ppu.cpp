@@ -605,6 +605,10 @@ quint64 Ppu::frame() const {
 	return this->frameValue;
 }
 
+quint8 Ppu::universalBackgroundColor() const {
+	return static_cast<quint8>(this->paletteRam.getU8(0) & 0x3F);
+}
+
 void Ppu::advanceTiming() {
 	++this->dotValue;
 	if (this->scanlineValue < 240 && this->dotValue >= 1

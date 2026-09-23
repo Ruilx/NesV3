@@ -11,6 +11,7 @@
 class NesNametableItem;
 class NesSpriteItem;
 class NesFrameItem;
+class QGraphicsRectItem;
 class Ppu;
 
 class NesScene : public QGraphicsScene {
@@ -60,6 +61,7 @@ private:
     };
 
     void createDemoNametables();
+    void createBackdropItem();
     void createFrameItem();
     void createViewportFrame();
     void createSpriteItems();
@@ -78,6 +80,7 @@ private:
     QHash<quint64, QVector<NesNametableItem *>> tiles;
     QVector<TileState> tileStates;
     QVector<NametablePlacement> placements;
+    QGraphicsRectItem *backdropItem = nullptr;
     NesFrameItem *frameItem = nullptr;
     QVector<NesSpriteItem *> spriteItems;
     QPointF scroll = QPointF(0, 0);

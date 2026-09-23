@@ -51,10 +51,14 @@ void NesTileItem::setPaletteIndices(
             const int index = y * TileSize + x;
             this->colorIndices[index] = subpalette.value(
                     this->pixels.value(index, 0), subpalette.value(0));
-            this->image.setPixelColor(
+                if (this->pixels.value(index, 0) == 0) {
+                this->image.setPixelColor(x, y, Qt::transparent);
+                } else {
+                this->image.setPixelColor(
                     x,
                     y,
                     palette.colorAt(this->colorIndices[index]));
+                }
         }
     }
     ++NesTileItem::statistics.updateRequests;
@@ -83,10 +87,14 @@ void NesTileItem::rebuildImage() {
     for (int y = 0; y < TileSize; ++y) {
         for (int x = 0; x < TileSize; ++x) {
             const int pixelIndex = y * TileSize + x;
-            this->image.setPixelColor(
-                    x,
-                    y,
-                    this->palette.value(this->colorIndices.value(pixelIndex, 0), Qt::black));
+            if (this->pixels.value(pixelIndex, 0) == 0) {
+                this->image.setPixelColor(x, y, Qt::transparent);
+            } else {
+                this->image.setPixelColor(
+                        x,
+                        y,
+                        this->palette.value(this->colorIndices.value(pixelIndex, 0), Qt::black));
+            }
         }
     }
 }

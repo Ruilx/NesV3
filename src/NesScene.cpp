@@ -59,6 +59,7 @@ NesScene::NesScene(QObject *parent) : QGraphicsScene(parent) {
     this->tileStates.resize(NametableColumns * NametableRows * TilesWide * TilesHigh);
 
     createDemoNametables();
+    createBackdropItem();
     createFrameItem();
     createSpriteItems();
     createViewportFrame();
@@ -101,6 +102,10 @@ void NesScene::updateTile(
 void NesScene::updateFromPpu(Ppu &ppu) {
     QElapsedTimer elapsedTimer;
     elapsedTimer.start();
+    if (this->backdropItem != nullptr) {
+        this->backdropItem->setBrush(
+            this->nesPalette.colorAt(ppu.universalBackgroundColor()));
+    }
     const QVector<Ppu::DirtyTile> dirtyTiles = ppu.takeDirtyTiles();
     const Ppu::ScrollSnapshot scrollSnapshot = ppu.scrollSnapshot();
     const QVector<Ppu::ScrollSnapshot> rasterScroll = ppu.rasterScroll();
@@ -185,6 +190,9 @@ void NesScene::invalidateTileCache() {
 
 void NesScene::setPalette(const NesPalette &palette) {
     this->nesPalette = palette;
+    if (this->backdropItem != nullptr) {
+        this->backdropItem->setBrush(this->nesPalette.colorAt(0));
+    }
     this->frameItem->setPalette(palette);
     for (const NametablePlacement &placement : this->placements) {
         placement.item->setPalette(this->nesPalette);
@@ -227,6 +235,7 @@ void NesScene::createDemoNametables() {
         const int originY = (nametable / NametableColumns) * NametableHeight;
 
         auto *nametableItem = new NesNametableItem;
+        nametableItem->setZValue(100.0);
         nametableItem->setPos(originX, originY);
         nametableItem->setPalette(this->nesPalette);
         addItem(nametableItem);
@@ -243,6 +252,12 @@ void NesScene::createDemoNametables() {
     }
 
     layoutNametableCopies();
+}
+
+void NesScene::createBackdropItem() {
+    this->backdropItem = addRect(
+        nesViewportRect(), QPen(Qt::NoPen), QBrush(this->nesPalette.colorAt(0)));
+    this->backdropItem->setZValue(0.0);
 }
 
 void NesScene::createFrameItem() {
@@ -288,7 +303,7 @@ void NesScene::createSpriteItems() {
     this->spriteItems.reserve(64);
     for (int index = 0; index < 64; ++index) {
         auto *spriteItem = new NesSpriteItem;
-        spriteItem->setZValue(500.0 + index);
+        spriteItem->setZValue(110.0 - index * 0.01);
         addItem(spriteItem);
         this->spriteItems.append(spriteItem);
     }
@@ -304,6 +319,10 @@ void NesScene::updateSpritesFromPpu(Ppu &ppu) {
         }
 
         const Ppu::SpriteOutput &sprite = sprites[index];
+        const bool behindBackground = (sprite.entry.attributes & 0x20) != 0;
+        const qreal baseZ = behindBackground ? 90.0 : 110.0;
+        const qreal zValue = baseZ - index * 0.01;
+        item->setZValue(zValue);
         item->setPos(sprite.screenX, sprite.screenY);
         item->setSprite(
             sprite.render.width,
