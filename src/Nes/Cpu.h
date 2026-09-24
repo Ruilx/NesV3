@@ -65,6 +65,7 @@ public:
     struct ExecutionStats {
         quint64 instructions = 0;
         quint64 nmiEntries = 0;
+        quint64 rtiEntries = 0;
         quint64 killedInstructions = 0;
         quint16 lastPc = 0;
         quint8 lastOpcode = 0;
@@ -75,6 +76,7 @@ private:
     quint16 wt;
     quint8 dt;
     quint8 instructionCyclesRemaining = 0;
+    quint8 nmiGraceInstructions = 0;
     ExecutionStats executionStats;
 
     quint8 op8(quint16 addr);
@@ -107,6 +109,8 @@ public:
     void clock();
 
     void nmi();
+
+    void deferNmi();
 
     void setIrq(quint8 mask);
 

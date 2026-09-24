@@ -60,8 +60,12 @@ public:
 	struct WriteStats {
 		quint64 controlWrites = 0;
 		quint64 maskWrites = 0;
+		quint8 lastMaskValue = 0;
+		quint64 oamDmaTransfers = 0;
 		quint64 oamAddressWrites = 0;
 		quint64 oamDataWrites = 0;
+		quint64 spriteOutputs = 0;
+		quint64 spriteRenderFailures = 0;
 		quint64 scrollWrites = 0;
 		quint64 addressWrites = 0;
 		quint64 dataWrites = 0;
@@ -124,6 +128,9 @@ public:
 	[[nodiscard]] quint16 dot() const;
 	[[nodiscard]] quint64 frame() const;
 	[[nodiscard]] quint8 universalBackgroundColor() const;
+	[[nodiscard]] quint8 controlRegister() const;
+	[[nodiscard]] quint8 maskRegister() const;
+	[[nodiscard]] quint8 statusRegister() const;
 
 	[[nodiscard]] Bus &bus();
 	[[nodiscard]] const Bus &bus() const;

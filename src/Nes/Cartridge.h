@@ -3,8 +3,9 @@
 #include "Bus.h"
 #include "Mapper/Mapper.h"
 #include "Ram.h"
-#include "Mapper/Mapper000.h"
 #include "InesHeader.h"
+
+#include <memory>
 
 class Cartridge {
 public:
@@ -29,9 +30,13 @@ public:
     [[nodiscard]] const Ram &chrRom() const;
 
 private:
+    [[nodiscard]] std::unique_ptr<Mapper> createMapper(
+        quint8 mapperNumber,
+        bool chrRam);
+
     Ram prgRomStorage;
     Ram chrRomStorage;
-    Mapper000 mapper;
+    std::unique_ptr<Mapper> mapper;
     MapperCpuDevice cpuDevice;
     MapperPpuDevice ppuDevice;
     InesHeader inesHeader;

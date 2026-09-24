@@ -1,14 +1,31 @@
 #include "Cartridge.h"
 
+#include "Mapper/Mapper000.h"
+#include "Mapper/Mapper003.h"
+
 #include <QFile>
 
 Cartridge::Cartridge(size_t prgRomSize, size_t chrRomSize)
     : prgRomStorage(prgRomSize),
       chrRomStorage(chrRomSize),
-      mapper(this->prgRomStorage, this->chrRomStorage),
-      cpuDevice(this->mapper),
-      ppuDevice(this->mapper) {
-        this->mapper.setChrRam(false);
+      mapper(std::make_unique<Mapper000>(
+          this->prgRomStorage, this->chrRomStorage, false)),
+      cpuDevice(this->mapper.get()),
+      ppuDevice(this->mapper.get()) {
+}
+
+std::unique_ptr<Mapper> Cartridge::createMapper(
+    quint8 mapperNumber, bool chrRam) {
+    switch (mapperNumber) {
+    case 0:
+        return std::make_unique<Mapper000>(
+            this->prgRomStorage, this->chrRomStorage, chrRam);
+    case 3:
+        return std::make_unique<Mapper003>(
+            this->prgRomStorage, this->chrRomStorage, chrRam);
+    default:
+        return nullptr;
+    }
 }
 
 bool Cartridge::loadFromFile(const QString &path, QString &error) {
@@ -22,7 +39,10 @@ bool Cartridge::loadFromFile(const QString &path, QString &error) {
     if (!InesHeader::parse(data, parsedHeader, error)) {
         return false;
     }
-    if (parsedHeader.mapperNumber != 0) {
+    const bool chrRam = parsedHeader.chrRomBanks == 0;
+    std::unique_ptr<Mapper> parsedMapper = this->createMapper(
+        parsedHeader.mapperNumber, chrRam);
+    if (parsedMapper == nullptr) {
         error = QStringLiteral("Mapper %1 is not supported yet.")
                 .arg(parsedHeader.mapperNumber);
         return false;
@@ -42,13 +62,15 @@ bool Cartridge::loadFromFile(const QString &path, QString &error) {
     for (qsizetype index = 0; index < prgSize; ++index) {
         this->prgRomStorage.setU8(index, static_cast<quint8>(data[dataOffset + index]));
     }
-    this->mapper.setChrRam(parsedHeader.chrRomBanks == 0);
     if (parsedHeader.chrRomBanks != 0) {
         const qsizetype chrOffset = dataOffset + prgSize;
         for (qsizetype index = 0; index < parsedHeader.chrRomSize(); ++index) {
             this->chrRomStorage.setU8(index, static_cast<quint8>(data[chrOffset + index]));
         }
     }
+    this->mapper = std::move(parsedMapper);
+    this->cpuDevice.setMapper(this->mapper.get());
+    this->ppuDevice.setMapper(this->mapper.get());
     this->inesHeader = parsedHeader;
     this->loaded = true;
     if (cpuBus != nullptr && ppuBus != nullptr) {
@@ -61,7 +83,10 @@ void Cartridge::unload() {
     this->disconnect();
     this->prgRomStorage.clear();
     this->chrRomStorage.clear();
-    this->mapper.setChrRam(false);
+    this->mapper = std::make_unique<Mapper000>(
+        this->prgRomStorage, this->chrRomStorage, false);
+    this->cpuDevice.setMapper(this->mapper.get());
+    this->ppuDevice.setMapper(this->mapper.get());
     this->inesHeader = InesHeader();
     this->loaded = false;
 }
@@ -85,7 +110,8 @@ void Cartridge::connect(Bus &cpuBus, Bus &ppuBus) {
         .start = 0x8000,
         .end = 0xFFFF,
         .priority = 0,
-        .flags = AccessFlags::Readable | AccessFlags::Executable,
+        .flags = AccessFlags::Readable | AccessFlags::Writable
+            | AccessFlags::Executable,
         .name = QStringLiteral("Cartridge PRG-ROM"),
         .device = &this->cpuDevice,
         .translate = [](quint16 address) {
@@ -96,7 +122,7 @@ void Cartridge::connect(Bus &cpuBus, Bus &ppuBus) {
         .start = 0x0000,
         .end = 0x1FFF,
         .priority = 0,
-        .flags = this->mapper.chrRam()
+        .flags = this->mapper->chrRam()
             ? AccessFlags::Readable | AccessFlags::Writable
             : AccessFlags::Readable,
         .name = QStringLiteral("Cartridge CHR-ROM"),

@@ -219,63 +219,40 @@ void MainWindow::runSimulationFrame() {
     }
 
     const double seconds = elapsedMilliseconds / 1000.0;
-    const NesTileItem::PaintStats tileStats = NesTileItem::paintStats();
-    const NesClock::TimingStats clockStats = this->nes.clock().takeTimingStats();
     const Ppu::WriteStats ppuWriteStats = this->nes.ppu().takeWriteStats();
     const Controller::ReadStats controllerStats =
         this->nes.controller().takeReadStats();
     const Cpu::ExecutionStats cpuStats = this->nes.cpu().takeExecutionStats();
+    Cpu::CpuReg cpuRegisters;
+    this->nes.cpu().getContent(cpuRegisters);
     const double simulationFps = this->performanceFrameCount / seconds;
     const double averageCoreMs = this->performanceCoreNanoseconds
         / static_cast<double>(this->performanceFrameCount) / 1000000.0;
     const double averageSceneMs = this->performanceSceneNanoseconds
         / static_cast<double>(this->performanceFrameCount) / 1000000.0;
-    const double averageCpuUs = clockStats.cpuSamples == 0
-        ? 0.0
-        : clockStats.cpuNanoseconds
-            / static_cast<double>(clockStats.cpuSamples) / 1000.0;
-    const double averagePpuUs = clockStats.ppuSamples == 0
-        ? 0.0
-        : clockStats.ppuNanoseconds
-            / static_cast<double>(clockStats.ppuSamples) / 1000.0;
     const QString message = QStringLiteral(
-        "FPS %1 | core %2 ms (CPU %3 us, PPU %4 us) | PC %5:%6 ins %7 NMI %8 KILLED %9 | scene %10 ms | dirty %11 | decode %12 | update %13 | tile update %14 rebuild %15 paint %16 | PPU writes CHR %17 NT %18 PAL %19 OAM %20 hit check %21 eval %22 render %23 sample %24 hit %25 | pad P1 %26 P2 %27 strobe %28 buttons $%29 latched $%30 seen $%31 seenCount %32 bit %33")
+        "FPS %1 | core %2 ms | PC %3:%4 now %5 SP %6 int %7 NMI %8 RTI %9 | maskWrites %10 lastMask $%11 DMA %12 spriteOut %13 spriteFail %14 | PPU $2000 %15 $2001 %16 $2002 %17 | buttons $%18 seen $%19")
         .arg(simulationFps, 0, 'f', 1)
         .arg(averageCoreMs, 0, 'f', 3)
-        .arg(averageCpuUs, 0, 'f', 1)
-        .arg(averagePpuUs, 0, 'f', 1)
         .arg(QString::number(cpuStats.lastPc, 16).rightJustified(4, QLatin1Char('0')))
         .arg(QString::number(cpuStats.lastOpcode, 16).rightJustified(2, QLatin1Char('0')))
-        .arg(cpuStats.instructions)
+        .arg(QString::number(cpuRegisters.pc, 16).rightJustified(4, QLatin1Char('0')))
+        .arg(QString::number(cpuRegisters.s, 16).rightJustified(2, QLatin1Char('0')))
+        .arg(static_cast<int>(cpuRegisters.intPending))
         .arg(cpuStats.nmiEntries)
-        .arg(cpuStats.killedInstructions)
-        .arg(averageSceneMs, 0, 'f', 3)
-        .arg(this->performanceDirtyTiles)
-        .arg(this->performanceDecodedTiles)
-        .arg(this->performanceUpdatedTiles)
-        .arg(tileStats.updateRequests)
-        .arg(tileStats.imageRebuilds)
-        .arg(tileStats.paintCalls)
-        .arg(ppuWriteStats.chrWrites)
-        .arg(ppuWriteStats.nametableWrites)
-        .arg(ppuWriteStats.paletteWrites)
-        .arg(ppuWriteStats.oamDataWrites)
-        .arg(ppuWriteStats.sprite0HitChecks)
-        .arg(ppuWriteStats.sprite0HitEvaluations)
-        .arg(ppuWriteStats.sprite0HitRenders)
-        .arg(ppuWriteStats.sprite0HitSamples)
-        .arg(ppuWriteStats.sprite0Hits)
-        .arg(controllerStats.port1Reads)
-        .arg(controllerStats.port2Reads)
-        .arg(controllerStats.strobeWrites)
+        .arg(cpuStats.rtiEntries)
+        .arg(ppuWriteStats.maskWrites)
+        .arg(ppuWriteStats.lastMaskValue, 2, 16, QLatin1Char('0'))
+        .arg(ppuWriteStats.oamDmaTransfers)
+        .arg(ppuWriteStats.spriteOutputs)
+        .arg(ppuWriteStats.spriteRenderFailures)
+        .arg(this->nes.ppu().controlRegister(), 2, 16, QLatin1Char('0'))
+        .arg(this->nes.ppu().maskRegister(), 2, 16, QLatin1Char('0'))
+        .arg(this->nes.ppu().statusRegister(), 2, 16, QLatin1Char('0'))
         .arg(QString::number(controllerStats.currentButtons, 16)
              .rightJustified(2, QLatin1Char('0')))
-        .arg(QString::number(controllerStats.lastLatchedButtons, 16)
-             .rightJustified(2, QLatin1Char('0')))
-           .arg(QString::number(controllerStats.lastNonZeroLatchedButtons, 16)
-               .rightJustified(2, QLatin1Char('0')))
-           .arg(controllerStats.nonZeroLatches)
-           .arg(controllerStats.lastPort1Bit);
+        .arg(QString::number(controllerStats.lastNonZeroLatchedButtons, 16)
+             .rightJustified(2, QLatin1Char('0')));
     this->statusBar()->showMessage(message);
     qInfo().noquote() << message;
 

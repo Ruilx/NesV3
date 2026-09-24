@@ -71,7 +71,7 @@ void testCartridgePrgMirror() {
     check(read(cpuBus, 0xD234) == 0x34, "PRG-ROM mirror should preserve its offset");
 
     const Bus::AccessResult writeResult = cpuBus.write(0x8000, 0xFF);
-    check(writeResult == Bus::AccessResult::PermissionDenied, "PRG-ROM writes should be denied");
+    check(writeResult == Bus::AccessResult::DeviceRejected, "Mapper should reject PRG-ROM writes");
     check(read(cpuBus, 0x8000) == 0x00, "denied PRG-ROM writes should not change data");
 }
 
@@ -175,6 +175,46 @@ void testChrRamInesLoad() {
         "CHR-RAM should accept PPU writes");
     check(read(ppuBus, 0x0000) == 0xC3,
         "CHR-RAM should return its written value");
+}
+
+void testInesMapper003ChrBankSwitch() {
+    QByteArray rom(16 + 32 * 1024 + 2 * 8 * 1024, '\0');
+    rom[0] = 'N';
+    rom[1] = 'E';
+    rom[2] = 'S';
+    rom[3] = 0x1A;
+    rom[4] = 2;
+    rom[5] = 2;
+    rom[6] = static_cast<char>(3 << 4);
+    rom[16] = static_cast<char>(0xA5);
+    rom[16 + 32 * 1024] = static_cast<char>(0x3C);
+    rom[16 + 32 * 1024 + 8 * 1024] = static_cast<char>(0x5A);
+
+    QTemporaryFile file;
+    check(file.open(), "temporary Mapper 3 file should open");
+    check(file.write(rom) == rom.size(), "temporary Mapper 3 file should be written");
+    file.flush();
+
+    Bus cpuBus(0x10000);
+    Bus ppuBus(0x4000);
+    Cartridge cartridge;
+    QString error;
+    check(cartridge.loadFromFile(file.fileName(), error),
+        "Mapper 3 iNES image should load");
+    check(cartridge.header().mapperNumber == 3,
+        "iNES header should expose Mapper 3");
+    cartridge.connect(cpuBus, ppuBus);
+
+    check(read(cpuBus, 0x8000) == 0xA5,
+        "Mapper 3 should keep PRG fixed at $8000");
+    check(read(ppuBus, 0x0000) == 0x3C,
+        "Mapper 3 should select CHR bank zero after reset");
+    check(cpuBus.write(0x8000, 0x01) == Bus::AccessResult::Handled,
+        "Mapper 3 CPU writes should select a CHR bank");
+    check(read(ppuBus, 0x0000) == 0x5A,
+        "Mapper 3 should expose the selected CHR bank");
+    check(ppuBus.write(0x0000, 0xFF) == Bus::AccessResult::PermissionDenied,
+        "Mapper 3 CHR-ROM should remain read-only");
 }
 
 void testCpuPpuBusIsolation() {
@@ -1034,6 +1074,7 @@ int main() {
     testCartridgeChrReadOnly();
     testCartridgeDisconnect();
     testInesMapper000Load();
+    testInesMapper003ChrBankSwitch();
     testChrRamInesLoad();
     testCpuPpuBusIsolation();
     testControllerSerialRead();

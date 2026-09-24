@@ -74,6 +74,7 @@ bool Ppu::read(quint16 address, quint8 &value) {
 
 bool Ppu::write(quint16 address, quint8 value) {
 	if (address == 0x4014) {
+		++this->writeStats.oamDmaTransfers;
 		if (this->oamDmaCallback) {
 			this->oamDmaCallback(value);
 		}
@@ -100,6 +101,7 @@ bool Ppu::write(quint16 address, quint8 value) {
 	}
 	case 0x0001:
 		++this->writeStats.maskWrites;
+		this->writeStats.lastMaskValue = value;
 		this->mask = value;
 		return true;
 	case 0x0003:
@@ -327,6 +329,7 @@ QVector<Ppu::SpriteOutput> Ppu::renderSpritesForFrame() {
 		};
 		SpriteRender renderedSprite;
 		if (!this->renderSprite(entry, renderedSprite)) {
+			++this->writeStats.spriteRenderFailures;
 			continue;
 		}
 		outputs.append({
@@ -336,6 +339,7 @@ QVector<Ppu::SpriteOutput> Ppu::renderSpritesForFrame() {
 			.screenY = static_cast<quint16>(entry.y + 1),
 		});
 	}
+	this->writeStats.spriteOutputs += static_cast<quint64>(outputs.size());
 	return outputs;
 }
 
@@ -607,6 +611,18 @@ quint64 Ppu::frame() const {
 
 quint8 Ppu::universalBackgroundColor() const {
 	return static_cast<quint8>(this->paletteRam.getU8(0) & 0x3F);
+}
+
+quint8 Ppu::controlRegister() const {
+	return this->control;
+}
+
+quint8 Ppu::maskRegister() const {
+	return this->mask;
+}
+
+quint8 Ppu::statusRegister() const {
+	return this->status;
 }
 
 void Ppu::advanceTiming() {

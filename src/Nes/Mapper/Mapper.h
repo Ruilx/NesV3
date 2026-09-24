@@ -6,6 +6,8 @@ class Mapper {
 public:
     virtual ~Mapper() = default;
 
+    [[nodiscard]] virtual bool chrRam() const = 0;
+
     virtual bool readCpu(quint16 address, quint8 &value) = 0;
     virtual bool writeCpu(quint16 address, quint8 value) = 0;
     virtual bool readPpu(quint16 address, quint8 &value) = 0;
@@ -14,22 +16,26 @@ public:
 
 class MapperCpuDevice final : public BusDevice {
 public:
-    explicit MapperCpuDevice(Mapper &mapper);
+    explicit MapperCpuDevice(Mapper *mapper = nullptr);
+
+    void setMapper(Mapper *mapper);
 
     bool read(quint16 address, quint8 &value) override;
     bool write(quint16 address, quint8 value) override;
 
 private:
-    Mapper &mapper;
+    Mapper *mapper = nullptr;
 };
 
 class MapperPpuDevice final : public BusDevice {
 public:
-    explicit MapperPpuDevice(Mapper &mapper);
+    explicit MapperPpuDevice(Mapper *mapper = nullptr);
+
+    void setMapper(Mapper *mapper);
 
     bool read(quint16 address, quint8 &value) override;
     bool write(quint16 address, quint8 value) override;
 
 private:
-    Mapper &mapper;
+    Mapper *mapper = nullptr;
 };

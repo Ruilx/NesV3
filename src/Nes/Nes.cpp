@@ -12,7 +12,10 @@ Nes::Nes(NesClock::TimingProfile timing)
                     [this]() { this->ppuComponent.clock(); },
                     timing) {
                 this->ppuComponent.setNmiCallback(
-                    [this]() { this->cpuComponent.nmi(); });
+                    [this]() {
+                        this->cpuComponent.nmi();
+                        this->cpuComponent.deferNmi();
+                    });
                     this->ppuComponent.setOamDmaCallback(
                         [this](quint8 page) {
                         const quint16 base = static_cast<quint16>(page) << 8;

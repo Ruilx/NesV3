@@ -47,9 +47,12 @@ quint8 Cpu::op8(quint16 addr) {
 
 quint8 Cpu::executeInstruction() {
     if (this->reg.intPending & Cpu::NmiFlag) {
-        this->clearIrq(Cpu::NmiFlag);
-        ++this->executionStats.nmiEntries;
-        return this->_nmi();
+        if (this->nmiGraceInstructions == 0) {
+            this->clearIrq(Cpu::NmiFlag);
+            ++this->executionStats.nmiEntries;
+            return this->_nmi();
+        }
+        --this->nmiGraceInstructions;
     }
     if ((this->reg.intPending & Cpu::IrqFlag) && !(this->reg.p & Cpu::IFlag)) {
         this->clearIrq(Cpu::IrqFlag);
@@ -442,6 +445,7 @@ void Cpu::rti(){
     this->reg.p = this->pop() | Cpu::RFlag;
     this->reg.pc = this->pop();
     this->reg.pc |= static_cast<quint16>(this->pop()) << 8;
+    ++this->executionStats.rtiEntries;
 }
 
 quint8 Cpu::_nmi(){
@@ -901,6 +905,7 @@ void Cpu::reset(){
     this->totalCycles = 0;
     this->dmaCycles = 0;
     this->instructionCyclesRemaining = 0;
+    this->nmiGraceInstructions = 0;
     this->executionStats = {};
 
     this->znTable[0] = Cpu::ZFlag;
@@ -912,6 +917,10 @@ void Cpu::reset(){
 // interrupt
 void Cpu::nmi(){
     this->reg.intPending = static_cast<CpuInterrupt>(this->reg.intPending | Cpu::NmiFlag);
+}
+
+void Cpu::deferNmi() {
+    this->nmiGraceInstructions = 1;
 }
 
 void Cpu::setIrq(quint8 mask) {
