@@ -5,6 +5,7 @@
 
 #include <array>
 #include <functional>
+#include <QHash>
 #include <QVector>
 
 class Ppu final : public BusDevice {
@@ -167,6 +168,8 @@ private:
 	SpriteLimitMode spriteLimitModeValue = SpriteLimitMode::HardwareAccurate;
 	NametableMirroring nametableMirroringValue = NametableMirroring::Horizontal;
 	std::array<bool, 4 * 32 * 30> dirtyTiles{};
+	QVector<int> dirtyTileIndices;
+	bool allTilesDirty = false;
 	WriteStats writeStats;
 	quint16 sprite0EvaluationScanline = 0;
 	bool sprite0EvaluationValid = false;
@@ -176,6 +179,7 @@ private:
 	SpriteRender cachedSprite0Render;
 	std::array<QVector<quint8>, 2 * 256> chrTileCache;
 	std::array<bool, 2 * 256> chrTileCacheValid{};
+	QHash<QByteArray, QVector<quint8>> decodedChrTileCache;
 
 	void incrementAddress();
 	void advanceTiming();

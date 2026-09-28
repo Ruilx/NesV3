@@ -379,22 +379,37 @@ Ppu::NametableMirroring Ppu::nametableMirroring() const {
 
 QVector<Ppu::DirtyTile> Ppu::takeDirtyTiles() {
 	QVector<DirtyTile> result;
-	result.reserve(4 * 32 * 30);
-	for (int nametable = 0; nametable < 4; ++nametable) {
-		for (int tileY = 0; tileY < 30; ++tileY) {
-			for (int tileX = 0; tileX < 32; ++tileX) {
-				const int index = this->dirtyTileIndex(nametable, tileX, tileY);
-				if (!this->dirtyTiles[static_cast<size_t>(index)]) {
-					continue;
+	if (this->allTilesDirty) {
+		result.reserve(4 * 32 * 30);
+		for (int nametable = 0; nametable < 4; ++nametable) {
+			for (int tileY = 0; tileY < 30; ++tileY) {
+				for (int tileX = 0; tileX < 32; ++tileX) {
+					result.append({
+						static_cast<quint8>(nametable),
+						static_cast<quint8>(tileX),
+						static_cast<quint8>(tileY)});
 				}
-				result.append({
-					static_cast<quint8>(nametable),
-					static_cast<quint8>(tileX),
-					static_cast<quint8>(tileY)});
-				this->dirtyTiles[static_cast<size_t>(index)] = false;
 			}
 		}
+		this->dirtyTiles.fill(false);
+		this->dirtyTileIndices.clear();
+		this->allTilesDirty = false;
+		return result;
 	}
+
+	result.reserve(this->dirtyTileIndices.size());
+	for (const int index : this->dirtyTileIndices) {
+		const int nametable = index / (30 * 32);
+		const int nametableOffset = index % (30 * 32);
+		const int tileY = nametableOffset / 32;
+		const int tileX = nametableOffset % 32;
+		result.append({
+			static_cast<quint8>(nametable),
+			static_cast<quint8>(tileX),
+			static_cast<quint8>(tileY)});
+		this->dirtyTiles[static_cast<size_t>(index)] = false;
+	}
+	this->dirtyTileIndices.clear();
 	return result;
 }
 
@@ -479,10 +494,32 @@ bool Ppu::renderNametableTile(
 		: 0;
 	const int cacheIndex = patternTableIndex * 256 + tileIndex;
 	if (!this->chrTileCacheValid[static_cast<size_t>(cacheIndex)]) {
-		if (!ChrTileDecoder::decodeTile(
-				this->ppuBus, tileIndex, patternTable,
-				this->chrTileCache[static_cast<size_t>(cacheIndex)])) {
-			return false;
+		QByteArray tileBytes;
+		tileBytes.resize(ChrTileDecoder::TileBytes);
+		const quint16 tileAddress = static_cast<quint16>(
+			static_cast<quint16>(patternTable)
+				+ tileIndex * ChrTileDecoder::TileBytes);
+		for (int offset = 0; offset < ChrTileDecoder::TileBytes; ++offset) {
+			quint8 value = this->ppuBus.openBusValue();
+			if (this->ppuBus.read(
+					static_cast<quint16>(tileAddress + offset), value)
+					!= Bus::AccessResult::Handled) {
+				return false;
+			}
+			tileBytes[offset] = static_cast<char>(value);
+		}
+
+		const auto decodedIterator = this->decodedChrTileCache.constFind(tileBytes);
+		if (decodedIterator != this->decodedChrTileCache.constEnd()) {
+			this->chrTileCache[static_cast<size_t>(cacheIndex)] = decodedIterator.value();
+		} else {
+			if (!ChrTileDecoder::decodeTile(
+					this->ppuBus, tileIndex, patternTable,
+					this->chrTileCache[static_cast<size_t>(cacheIndex)])) {
+				return false;
+			}
+			this->decodedChrTileCache.insert(
+				tileBytes, this->chrTileCache[static_cast<size_t>(cacheIndex)]);
 		}
 		this->chrTileCacheValid[static_cast<size_t>(cacheIndex)] = true;
 	}
@@ -610,6 +647,7 @@ void Ppu::reset() {
 	this->writeStats = {};
 	this->invalidateSprite0Cache();
 	this->invalidateChrTileCache();
+	this->decodedChrTileCache.clear();
 	this->resetClock();
 	this->markAllTilesDirty();
 }
@@ -781,7 +819,11 @@ void Ppu::markMemoryWrite(quint16 address) {
 }
 
 void Ppu::markAllTilesDirty() {
-	this->dirtyTiles.fill(true);
+	if (this->allTilesDirty) {
+		return;
+	}
+	this->allTilesDirty = true;
+	this->dirtyTileIndices.clear();
 }
 
 void Ppu::markNametableTileDirty(quint16 address) {
@@ -821,8 +863,15 @@ void Ppu::markAttributeDirty(quint16 address) {
 }
 
 void Ppu::markLogicalTileDirty(int nametable, int tileX, int tileY) {
-	this->dirtyTiles[static_cast<size_t>(
-		this->dirtyTileIndex(nametable, tileX, tileY))] = true;
+	if (this->allTilesDirty) {
+		return;
+	}
+	const int index = this->dirtyTileIndex(nametable, tileX, tileY);
+	if (this->dirtyTiles[static_cast<size_t>(index)]) {
+		return;
+	}
+	this->dirtyTiles[static_cast<size_t>(index)] = true;
+	this->dirtyTileIndices.append(index);
 }
 
 int Ppu::dirtyTileIndex(int nametable, int tileX, int tileY) const {
