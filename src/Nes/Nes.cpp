@@ -11,6 +11,31 @@ Nes::Nes(NesClock::TimingProfile timing)
                     [this]() { this->cpuComponent.clock(); },
                     [this]() { this->ppuComponent.clock(); },
                     timing) {
+                this->cartridgeComponent.setMirroringCallback(
+                    [this](Mapper::Mirroring mirroring) {
+                        switch (mirroring) {
+                        case Mapper::Mirroring::SingleScreenA:
+                            this->ppuComponent.setNametableMirroring(
+                                Ppu::NametableMirroring::SingleScreenA);
+                            break;
+                        case Mapper::Mirroring::SingleScreenB:
+                            this->ppuComponent.setNametableMirroring(
+                                Ppu::NametableMirroring::SingleScreenB);
+                            break;
+                        case Mapper::Mirroring::Vertical:
+                            this->ppuComponent.setNametableMirroring(
+                                Ppu::NametableMirroring::Vertical);
+                            break;
+                        case Mapper::Mirroring::FourScreen:
+                            this->ppuComponent.setNametableMirroring(
+                                Ppu::NametableMirroring::FourScreen);
+                            break;
+                        case Mapper::Mirroring::Horizontal:
+                            this->ppuComponent.setNametableMirroring(
+                                Ppu::NametableMirroring::Horizontal);
+                            break;
+                        }
+                    });
                 this->ppuComponent.setNmiCallback(
                     [this]() {
                         this->cpuComponent.nmi();

@@ -54,5 +54,6 @@ bool Mapper003::writePpu(quint16 address, quint8 value) {
     }
 
     this->chrRom.setU8(offset, value);
+    this->notifyMappingChanged();
     return true;
 }

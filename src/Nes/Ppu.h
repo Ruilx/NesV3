@@ -80,6 +80,8 @@ public:
 		quint64 sprite0Hits = 0;
 	};
 	enum class NametableMirroring : quint8 {
+		SingleScreenA,
+		SingleScreenB,
 		Horizontal,
 		Vertical,
 		FourScreen,
@@ -114,6 +116,7 @@ public:
 	[[nodiscard]] QVector<DirtyTile> takeDirtyTiles();
 	[[nodiscard]] WriteStats takeWriteStats();
 	void invalidateAllTiles();
+	void invalidateChrTileCache();
 	[[nodiscard]] bool renderNametableTile(
 			int nametable,
 			int tileX,
@@ -171,6 +174,8 @@ private:
 	SpriteEntry cachedSprite0;
 	bool sprite0RenderValid = false;
 	SpriteRender cachedSprite0Render;
+	std::array<QVector<quint8>, 2 * 256> chrTileCache;
+	std::array<bool, 2 * 256> chrTileCacheValid{};
 
 	void incrementAddress();
 	void advanceTiming();

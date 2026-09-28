@@ -4,6 +4,7 @@
 #include "NesScene.h"
 #include "NesTileItem.h"
 #include "NesView.h"
+#include "Nes/Mapper/Mapper001.h"
 #include "PaletteEditorDialog.h"
 #include "PatternTableDialog.h"
 
@@ -58,6 +59,11 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent) {
     });
     this->scene = new NesScene(view);
     this->scene->setPalette(loadStoredPalette());
+    this->nes.cartridge().setMappingChangedCallback(
+        [this]() {
+            this->nes.ppu().invalidateChrTileCache();
+            this->scene->invalidateTileCache();
+        });
     view->setScene(this->scene);
     view->centerOn(this->scene->nesViewportRect().center());
     this->setCentralWidget(view);
@@ -154,6 +160,8 @@ void MainWindow::openRom() {
         QMessageBox::critical(this, tr("Open ROM failed"), error);
         return;
     }
+
+    qInfo() << QString("Loaded ROM: %1, mapper %2").arg(QFileInfo(path).fileName()).arg(this->nes.cartridge().header().mapperNumber);
 
     this->nes.cartridge().connect(
             this->nes.cpu().bus(), this->nes.ppu().bus());
@@ -255,6 +263,16 @@ void MainWindow::runSimulationFrame() {
              .rightJustified(2, QLatin1Char('0')));
     this->statusBar()->showMessage(message);
     qInfo().noquote() << message;
+    if (Mapper001 *mapper = this->nes.cartridge().mapper001()) {
+        const Mapper001::Stats mapperStats = mapper->takeStats();
+        qInfo().noquote()
+            << QStringLiteral("MMC1 serialWrites=%1 chrBankCommits=%2 "
+                              "effectiveChrChanges=%3 resetWrites=%4")
+                .arg(mapperStats.serialWrites)
+                .arg(mapperStats.chrBankCommits)
+                .arg(mapperStats.effectiveChrChanges)
+                .arg(mapperStats.resetWrites);
+    }
 
     this->performanceTimer.restart();
     this->performanceFrameCount = 0;

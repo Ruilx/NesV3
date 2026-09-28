@@ -6,6 +6,7 @@
 #include "NesClock.h"
 #include "Ppu.h"
 #include "Ram.h"
+#include "Mapper/Mapper001.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -73,6 +74,89 @@ void testCartridgePrgMirror() {
     const Bus::AccessResult writeResult = cpuBus.write(0x8000, 0xFF);
     check(writeResult == Bus::AccessResult::DeviceRejected, "Mapper should reject PRG-ROM writes");
     check(read(cpuBus, 0x8000) == 0x00, "denied PRG-ROM writes should not change data");
+}
+
+void writeMapperRegister(Mapper001 &mapper, quint16 address, quint8 value) {
+    for (int bit = 0; bit < 5; ++bit) {
+        check(mapper.writeCpu(address, static_cast<quint8>((value >> bit) & 1)),
+            "MMC1 serial write should be accepted");
+    }
+}
+
+void testMapper001BankSwitching() {
+    Ram prgRom(8 * 16 * 1024);
+    Ram prgRam(8 * 1024);
+    Ram chrRom(4 * 8 * 1024);
+    for (int bank = 0; bank < 8; ++bank) {
+        prgRom.setU8(bank * 0x4000, static_cast<quint8>(bank));
+    }
+    for (int bank = 0; bank < 4; ++bank) {
+        chrRom.setU8(bank * 0x2000, static_cast<quint8>(0x40 + bank));
+        chrRom.setU8(bank * 0x2000 + 0x1000, static_cast<quint8>(0x40 + bank));
+    }
+
+    Mapper001 mapper(prgRom, prgRam, chrRom);
+    quint8 value = 0;
+    check(mapper.readCpu(0x0000, value) && value == 0x00,
+        "MMC1 default mode should select PRG bank zero at $8000");
+    check(mapper.readCpu(0x4000, value) && value == 0x07,
+        "MMC1 default mode should fix the final PRG bank at $C000");
+
+    writeMapperRegister(mapper, 0x6000, 2);
+    check(mapper.readCpu(0x0000, value) && value == 0x02,
+        "MMC1 PRG mode 3 should switch the lower 16 KiB bank");
+    check(mapper.readCpu(0x4000, value) && value == 0x07,
+        "MMC1 PRG mode 3 should retain the final upper bank");
+
+    writeMapperRegister(mapper, 0x0000, 0x0C);
+    writeMapperRegister(mapper, 0x2000, 2);
+    check(mapper.readPpu(0x0000, value) && value == 0x41,
+        "MMC1 8 KiB CHR mode should align the selected bank");
+    check(mapper.readPpu(0x1000, value) && value == 0x41,
+        "MMC1 8 KiB CHR mode should use one bank for both halves");
+
+    writeMapperRegister(mapper, 0x0000, 0x1C);
+    writeMapperRegister(mapper, 0x2000, 0);
+    writeMapperRegister(mapper, 0x4000, 2);
+    check(mapper.readPpu(0x0000, value) && value == 0x40,
+        "MMC1 4 KiB CHR mode should select the lower CHR bank");
+    check(mapper.readPpu(0x1000, value) && value == 0x41,
+        "MMC1 4 KiB CHR mode should select the upper CHR bank");
+
+    check(mapper.writeCpu(0x0000, 0x80),
+        "MMC1 reset write should be accepted");
+    check(mapper.mirroring() == Mapper::Mirroring::SingleScreenA,
+        "MMC1 reset should restore single-screen A mirroring");
+}
+
+void testCartridgePrgRamMapping() {
+    Bus cpuBus(0x10000);
+    Bus ppuBus(0x4000);
+    Cartridge cartridge;
+    cartridge.connect(cpuBus, ppuBus);
+    check(cpuBus.write(0x6000, 0xA5) == Bus::AccessResult::Handled,
+        "cartridge PRG-RAM should accept writes at $6000");
+    check(read(cpuBus, 0x6000) == 0xA5,
+        "cartridge PRG-RAM should return written data");
+    check(cpuBus.write(0x7FFF, 0x5A) == Bus::AccessResult::Handled,
+        "cartridge PRG-RAM should accept writes at $7FFF");
+    check(read(cpuBus, 0x7FFF) == 0x5A,
+        "cartridge PRG-RAM should map the complete 8 KiB window");
+}
+
+void testPpuSingleScreenMirroring() {
+    Ppu ppu;
+    ppu.setNametableMirroring(Ppu::NametableMirroring::SingleScreenA);
+    check(ppu.bus().write(0x2000, 0x12) == Bus::AccessResult::Handled,
+        "single-screen A base write should be handled");
+    check(read(ppu.bus(), 0x2400) == 0x12,
+        "single-screen A should map all nametables to table zero");
+
+    ppu.setNametableMirroring(Ppu::NametableMirroring::SingleScreenB);
+    check(ppu.bus().write(0x2400, 0x34) == Bus::AccessResult::Handled,
+        "single-screen B write should be handled");
+    check(read(ppu.bus(), 0x2000) == 0x34,
+        "single-screen B should map all nametables to table one");
 }
 
 void testCartridgeChrReadOnly() {
@@ -1071,6 +1155,8 @@ void testSprite0HitTiming() {
 int main() {
     testCpuInternalRamMirrors();
     testCartridgePrgMirror();
+    testMapper001BankSwitching();
+    testCartridgePrgRamMapping();
     testCartridgeChrReadOnly();
     testCartridgeDisconnect();
     testInesMapper000Load();
@@ -1084,6 +1170,7 @@ int main() {
     testCpuBasicExecution();
     testCpuCycleAndBranchTiming();
     testPpuRegistersAndBusMirror();
+    testPpuSingleScreenMirroring();
     testOamDma();
     testSpriteEvaluation();
     testSpriteRendering();

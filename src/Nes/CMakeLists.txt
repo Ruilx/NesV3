@@ -24,6 +24,8 @@ add_library(Nes STATIC
     Mapper/Mapper.h
     Mapper/Mapper000.cpp
     Mapper/Mapper000.h
+    Mapper/Mapper001.cpp
+    Mapper/Mapper001.h
     Mapper/Mapper003.cpp
     Mapper/Mapper003.h
     Mapper/eeprom/x24c01.cpp

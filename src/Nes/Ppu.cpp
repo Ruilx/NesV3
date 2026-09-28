@@ -96,6 +96,7 @@ bool Ppu::write(quint16 address, quint8 value) {
 			(this->temporaryAddress & 0xF3FF) | ((value & 0x03) << 10));
 		if (patternTableChanged) {
 			this->markAllTilesDirty();
+			this->invalidateChrTileCache();
 		}
 		return true;
 	}
@@ -407,6 +408,13 @@ void Ppu::invalidateAllTiles() {
 	this->markAllTilesDirty();
 }
 
+void Ppu::invalidateChrTileCache() {
+	for (QVector<quint8> &tile : this->chrTileCache) {
+		tile.clear();
+	}
+	this->chrTileCacheValid.fill(false);
+}
+
 bool Ppu::renderNametableTile(
 		int nametable,
 		int tileX,
@@ -466,8 +474,20 @@ bool Ppu::renderNametableTile(
 			(this->control & 0x10) != 0
 			? ChrTileDecoder::PatternTable::Upper
 			: ChrTileDecoder::PatternTable::Lower;
-	return ChrTileDecoder::decodeTile(
-			this->ppuBus, tileIndex, patternTable, pixels);
+	const int patternTableIndex = patternTable == ChrTileDecoder::PatternTable::Upper
+		? 1
+		: 0;
+	const int cacheIndex = patternTableIndex * 256 + tileIndex;
+	if (!this->chrTileCacheValid[static_cast<size_t>(cacheIndex)]) {
+		if (!ChrTileDecoder::decodeTile(
+				this->ppuBus, tileIndex, patternTable,
+				this->chrTileCache[static_cast<size_t>(cacheIndex)])) {
+			return false;
+		}
+		this->chrTileCacheValid[static_cast<size_t>(cacheIndex)] = true;
+	}
+	pixels = this->chrTileCache[static_cast<size_t>(cacheIndex)];
+	return true;
 }
 
 bool Ppu::sampleBackgroundPixel(
@@ -589,6 +609,7 @@ void Ppu::reset() {
 	this->readBuffer = 0;
 	this->writeStats = {};
 	this->invalidateSprite0Cache();
+	this->invalidateChrTileCache();
 	this->resetClock();
 	this->markAllTilesDirty();
 }
@@ -813,7 +834,11 @@ quint16 Ppu::translateNametableAddress(quint16 address) const {
 	const quint16 table = static_cast<quint16>(offset / 0x0400);
 	const quint16 inner = static_cast<quint16>(offset & 0x03FF);
 	quint16 physicalTable = table;
-	if (this->nametableMirroringValue == NametableMirroring::Vertical) {
+	if (this->nametableMirroringValue == NametableMirroring::SingleScreenA) {
+		physicalTable = 0;
+	} else if (this->nametableMirroringValue == NametableMirroring::SingleScreenB) {
+		physicalTable = 1;
+	} else if (this->nametableMirroringValue == NametableMirroring::Vertical) {
 		physicalTable = static_cast<quint16>(table & 0x01);
 	} else if (this->nametableMirroringValue == NametableMirroring::Horizontal) {
 		physicalTable = static_cast<quint16>((table >> 1) & 0x01);

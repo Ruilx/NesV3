@@ -6,6 +6,10 @@
 #include "InesHeader.h"
 
 #include <memory>
+#include <functional>
+
+class Mapper001;
+#include <functional>
 
 class Cartridge {
 public:
@@ -18,6 +22,9 @@ public:
 
     void connect(Bus &cpuBus, Bus &ppuBus);
     void disconnect();
+    void setMirroringCallback(Mapper::MirroringCallback callback);
+    void setMappingChangedCallback(Mapper::MappingChangedCallback callback);
+    [[nodiscard]] Mapper001 *mapper001();
 
     [[nodiscard]] bool loadFromFile(const QString &path, QString &error);
     void unload();
@@ -25,8 +32,10 @@ public:
     [[nodiscard]] const InesHeader &header() const;
 
     [[nodiscard]] Ram &prgRom();
+    [[nodiscard]] Ram &prgRam();
     [[nodiscard]] Ram &chrRom();
     [[nodiscard]] const Ram &prgRom() const;
+    [[nodiscard]] const Ram &prgRam() const;
     [[nodiscard]] const Ram &chrRom() const;
 
 private:
@@ -35,14 +44,19 @@ private:
         bool chrRam);
 
     Ram prgRomStorage;
+    Ram prgRamStorage;
     Ram chrRomStorage;
     std::unique_ptr<Mapper> mapper;
     MapperCpuDevice cpuDevice;
     MapperPpuDevice ppuDevice;
+    RamBusDevice prgRamDevice;
     InesHeader inesHeader;
     bool loaded = false;
     Bus *connectedCpuBus = nullptr;
     Bus *connectedPpuBus = nullptr;
     Bus::MappingId cpuMappingId = 0;
+    Bus::MappingId prgRamMappingId = 0;
     Bus::MappingId ppuMappingId = 0;
+    Mapper::MirroringCallback mirroringCallback;
+    Mapper::MappingChangedCallback mappingChangedCallback;
 };
