@@ -9,14 +9,14 @@ add_library(Nes STATIC
     ApuChannel.h
     ApuChannelRegistry.cpp
     ApuChannelRegistry.h
-    DpcmChannel.cpp
-    DpcmChannel.h
-    PulseChannel.cpp
-    PulseChannel.h
-    TriangleChannel.cpp
-    TriangleChannel.h
-    NoiseChannel.cpp
-    NoiseChannel.h
+    Channels/DpcmChannel.cpp
+    Channels/DpcmChannel.h
+    Channels/PulseChannel.cpp
+    Channels/PulseChannel.h
+    Channels/TriangleChannel.cpp
+    Channels/TriangleChannel.h
+    Channels/NoiseChannel.cpp
+    Channels/NoiseChannel.h
     Cartridge.cpp
     Cartridge.h
     Controller.cpp

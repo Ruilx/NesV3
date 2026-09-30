@@ -1,7 +1,7 @@
 #include "Apu.h"
-#include "NoiseChannel.h"
-#include "PulseChannel.h"
-#include "TriangleChannel.h"
+#include "Channels/NoiseChannel.h"
+#include "Channels/PulseChannel.h"
+#include "Channels/TriangleChannel.h"
 
 Apu::Apu() {
     this->dpcmChannel.setIrqCallback([this](bool pending) {

@@ -1,8 +1,8 @@
 #include "Nes.h"
-#include "DpcmChannel.h"
-#include "NoiseChannel.h"
-#include "PulseChannel.h"
-#include "TriangleChannel.h"
+#include "Channels/DpcmChannel.h"
+#include "Channels/NoiseChannel.h"
+#include "Channels/PulseChannel.h"
+#include "Channels/TriangleChannel.h"
 
 #include <cstdlib>
 #include <iostream>

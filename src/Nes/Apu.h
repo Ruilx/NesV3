@@ -2,7 +2,7 @@
 
 #include "Bus.h"
 #include "ApuChannelRegistry.h"
-#include "DpcmChannel.h"
+#include "Channels/DpcmChannel.h"
 
 #include <functional>
 
