@@ -2,6 +2,7 @@
 
 #include "Bus.h"
 #include "ApuChannelRegistry.h"
+#include "DpcmChannel.h"
 
 #include <functional>
 
@@ -38,6 +39,7 @@ public:
     void clock();
     void reset();
     void setIrqCallback(IrqCallback callback);
+    void setDpcmMemoryReader(DpcmChannel::MemoryReader reader);
     void setFrameCounterCallback(FrameCounterCallback callback);
     ApuChannelRegistry::ChannelHandle registerChannel(
         std::unique_ptr<ApuChannel> channel,
@@ -63,8 +65,10 @@ private:
     FrameCounterCallback frameCounterCallback;
     Stats statistics;
     bool irqLinePending = false;
+    DpcmChannel dpcmChannel;
 
     void writeFrameCounter(quint8 value);
     void emitFrameCounterEvent(FrameCounterEvent event);
     void updateIrqLine();
+    void updateDpcmIrq(bool pending);
 };

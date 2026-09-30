@@ -4,6 +4,9 @@
 #include "TriangleChannel.h"
 
 Apu::Apu() {
+    this->dpcmChannel.setIrqCallback([this](bool pending) {
+        this->updateDpcmIrq(pending);
+    });
     this->reset();
     this->registerChannel(
         std::make_unique<PulseChannel>(true),
@@ -61,6 +64,10 @@ bool Apu::write(quint16 address, quint8 value) {
     ++this->statistics.writes;
     if (address <= 0x13) {
         this->channelRegistry.writeRegister(address, value);
+        if (address >= 0x10) {
+            this->dpcmChannel.writeRegister(
+                static_cast<quint16>(address - 0x10), value);
+        }
         this->registers[address] = value;
         return true;
     }
@@ -68,6 +75,8 @@ bool Apu::write(quint16 address, quint8 value) {
         this->registers[address] = value;
         this->channelEnable = static_cast<quint8>(value & 0x1F);
         this->channelRegistry.setEnabledMask(this->channelEnable);
+        this->dpcmChannel.setEnabled((this->channelEnable & 0x10) != 0);
+        this->dpcmChannel.clearIrq();
         this->dpcmIrq = false;
         this->updateIrqLine();
         return true;
@@ -83,6 +92,7 @@ bool Apu::write(quint16 address, quint8 value) {
 void Apu::clock() {
     ++this->statistics.clockCalls;
     this->channelRegistry.clockCpuCycle();
+    this->dpcmChannel.clockCpuCycle();
     ++this->frameCounterCycles;
     switch (this->frameCounterCycles) {
     case 3729:
@@ -129,6 +139,7 @@ void Apu::reset() {
     this->frameIrqInhibit = false;
     this->frameCounterCycles = 0;
     this->channelRegistry.reset();
+    this->dpcmChannel.reset();
     this->statistics = Stats();
     this->irqLinePending = false;
     this->updateIrqLine();
@@ -137,6 +148,10 @@ void Apu::reset() {
 void Apu::setIrqCallback(IrqCallback callback) {
     this->irqCallback = std::move(callback);
     this->updateIrqLine();
+}
+
+void Apu::setDpcmMemoryReader(DpcmChannel::MemoryReader reader) {
+    this->dpcmChannel.setMemoryReader(std::move(reader));
 }
 
 void Apu::setFrameCounterCallback(FrameCounterCallback callback) {
@@ -158,9 +173,9 @@ bool Apu::unregisterChannel(ApuChannelRegistry::ChannelHandle handle) {
 
 Apu::Status Apu::status() const {
     return Status{
-        .channelEnable = this->channelRegistry.registeredMask() != 0
-            ? this->channelRegistry.enabledMask()
-            : this->channelEnable,
+        .channelEnable = static_cast<quint8>(
+            this->channelRegistry.enabledMask()
+            | (this->dpcmChannel.isEnabled() ? 0x10 : 0)),
         .frameIrq = this->frameIrq,
         .dpcmIrq = this->dpcmIrq,
     };
@@ -207,4 +222,9 @@ void Apu::updateIrqLine() {
     if (this->irqCallback) {
         this->irqCallback(pending);
     }
+}
+
+void Apu::updateDpcmIrq(bool pending) {
+    this->dpcmIrq = pending;
+    this->updateIrqLine();
 }

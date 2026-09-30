@@ -1,4 +1,5 @@
 #include "Nes.h"
+#include "DpcmChannel.h"
 #include "NoiseChannel.h"
 #include "PulseChannel.h"
 #include "TriangleChannel.h"
@@ -377,6 +378,73 @@ void testApuBuiltInNoiseChannel() {
     check((apu.status().channelEnable & 0x08) != 0,
         "APU should expose the built-in noise status bit");
 }
+
+void testDpcmChannel() {
+    DpcmChannel dpcm;
+    quint16 readAddress = 0;
+    int irqChanges = 0;
+    bool irqPending = false;
+    dpcm.setMemoryReader([&readAddress](quint16 address) {
+        readAddress = address;
+        return static_cast<quint8>(0xFF);
+    });
+    dpcm.setIrqCallback([&irqChanges, &irqPending](bool pending) {
+        ++irqChanges;
+        irqPending = pending;
+    });
+    dpcm.writeRegister(0, 0x8F);
+    dpcm.writeRegister(1, 0x40);
+    dpcm.writeRegister(2, 0x02);
+    dpcm.writeRegister(3, 0x00);
+    dpcm.setEnabled(true);
+    check(dpcm.currentAddress() == 0xC080 && dpcm.sampleLength() == 1,
+        "DPCM should decode sample address and length registers");
+    check(dpcm.timerPeriod() == 54 && dpcm.outputLevel() == 0x40,
+        "DPCM should decode rate and direct output registers");
+
+    dpcm.clockCpuCycle();
+    check(readAddress == 0xC080 && dpcm.bytesRemaining() == 0,
+        "DPCM should fetch the sample byte at its decoded address");
+    for (int bit = 1; bit < 8; ++bit) {
+        for (int cycle = 0; cycle < 55; ++cycle) {
+            dpcm.clockCpuCycle();
+        }
+    }
+    check(dpcm.irqPending() && irqPending && irqChanges == 2,
+        "DPCM should raise IRQ after consuming the final sample bit");
+    check(dpcm.outputLevel() == 0x50,
+        "DPCM one bits should increase the output by two with saturation");
+    dpcm.clearIrq();
+    check(!dpcm.irqPending() && !irqPending,
+        "DPCM IRQ should be clearable");
+}
+
+void testApuBuiltInDpcmChannel() {
+    Apu apu;
+    bool irqPending = false;
+    apu.setDpcmMemoryReader([](quint16) { return static_cast<quint8>(0); });
+    apu.setIrqCallback([&irqPending](bool pending) {
+        irqPending = pending;
+    });
+    apu.write(0x10, 0x8F);
+    apu.write(0x11, 0x40);
+    apu.write(0x12, 0x00);
+    apu.write(0x13, 0x00);
+    apu.write(0x15, 0x10);
+    check((apu.status().channelEnable & 0x10) != 0,
+        "APU should expose the built-in DPCM status bit");
+    runCycles(apu, 1 + 7 * 55);
+    check(apu.status().dpcmIrq && irqPending,
+        "APU should expose and route DPCM IRQ state");
+    quint8 status = 0;
+    check(apu.read(0x15, status) && (status & 0x80) != 0,
+        "APU status read should expose DPCM IRQ");
+    check(apu.status().dpcmIrq && irqPending,
+        "APU status read should preserve DPCM IRQ");
+    apu.write(0x15, 0x00);
+    check(!apu.status().dpcmIrq && !irqPending,
+        "APU status write should clear DPCM IRQ");
+}
 }
 
 int main() {
@@ -391,6 +459,8 @@ int main() {
     testApuBuiltInTriangleChannel();
     testNoiseChannel();
     testApuBuiltInNoiseChannel();
+    testDpcmChannel();
+    testApuBuiltInDpcmChannel();
     std::cout << "ApuTests passed\n";
     return EXIT_SUCCESS;
 }

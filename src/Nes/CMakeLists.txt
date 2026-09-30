@@ -9,6 +9,8 @@ add_library(Nes STATIC
     ApuChannel.h
     ApuChannelRegistry.cpp
     ApuChannelRegistry.h
+    DpcmChannel.cpp
+    DpcmChannel.h
     PulseChannel.cpp
     PulseChannel.h
     TriangleChannel.cpp

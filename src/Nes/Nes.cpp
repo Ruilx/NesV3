@@ -24,6 +24,10 @@ Nes::Nes(NesClock::TimingProfile timing)
                             this->cpuComponent.clearIrq(Cpu::IrqFrameIrq);
                         }
                     });
+                this->apuComponent.setDpcmMemoryReader(
+                    [this](quint16 address) {
+                        return this->cpuComponent.readRam8(address);
+                    });
                 this->cartridgeComponent.setMirroringCallback(
                     [this](Mapper::Mirroring mirroring) {
                         switch (mirroring) {
