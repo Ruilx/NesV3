@@ -13,6 +13,8 @@ public:
         quint64 paintCalls = 0;
         quint64 imageRebuilds = 0;
         quint64 updateRequests = 0;
+        quint64 paintNanoseconds = 0;
+        quint64 imageRebuildNanoseconds = 0;
     };
     static constexpr int TileSize = 8;
 

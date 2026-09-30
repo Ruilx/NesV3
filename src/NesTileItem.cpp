@@ -1,7 +1,12 @@
 #include "NesTileItem.h"
 
+#include <QElapsedTimer>
 #include <QPainter>
 #include <QStyleOptionGraphicsItem>
+
+namespace {
+constexpr bool EnableTileTimingSampling = true;
+}
 
 NesTileItem::PaintStats NesTileItem::statistics;
 
@@ -16,12 +21,20 @@ QRectF NesTileItem::boundingRect() const {
 }
 
 void NesTileItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *) {
+    QElapsedTimer timer;
+    if constexpr (EnableTileTimingSampling) {
+        timer.start();
+    }
     ++NesTileItem::statistics.paintCalls;
     painter->drawImage(QPointF(0, 0), this->image);
 
     if (this->gridVisible) {
         painter->setPen(QPen(QColor(255, 255, 255, 80), 0));
         painter->drawRect(boundingRect());
+    }
+    if constexpr (EnableTileTimingSampling) {
+        NesTileItem::statistics.paintNanoseconds +=
+            static_cast<quint64>(timer.nsecsElapsed());
     }
 }
 
@@ -83,6 +96,8 @@ void NesTileItem::setGridVisible(bool visible) {
 }
 
 void NesTileItem::rebuildImage() {
+    QElapsedTimer timer;
+    timer.start();
     ++NesTileItem::statistics.imageRebuilds;
     for (int y = 0; y < TileSize; ++y) {
         for (int x = 0; x < TileSize; ++x) {
@@ -97,6 +112,8 @@ void NesTileItem::rebuildImage() {
             }
         }
     }
+    NesTileItem::statistics.imageRebuildNanoseconds +=
+        static_cast<quint64>(timer.nsecsElapsed());
 }
 
 void NesTileItem::resetPaintStats() {

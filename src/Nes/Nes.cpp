@@ -6,11 +6,24 @@ Nes::Nes() : Nes(NesClock::TimingProfile()) {
 Nes::Nes(NesClock::TimingProfile timing)
     : cpuComponent(),
             ppuComponent(),
+            controllerComponent(),
             cartridgeComponent(),
+            apuComponent(),
             clockComponent(
-                    [this]() { this->cpuComponent.clock(); },
+                    [this]() {
+                        this->cpuComponent.clock();
+                        this->apuComponent.clock();
+                    },
                     [this]() { this->ppuComponent.clock(); },
                     timing) {
+                this->apuComponent.setIrqCallback(
+                    [this](bool pending) {
+                        if (pending) {
+                            this->cpuComponent.setIrq(Cpu::IrqFrameIrq);
+                        } else {
+                            this->cpuComponent.clearIrq(Cpu::IrqFrameIrq);
+                        }
+                    });
                 this->cartridgeComponent.setMirroringCallback(
                     [this](Mapper::Mirroring mirroring) {
                         switch (mirroring) {
@@ -81,11 +94,53 @@ Nes::Nes(NesClock::TimingProfile timing)
                 .start = 0x4016,
                 .end = 0x4017,
                 .priority = 0,
-                .flags = AccessFlags::Readable | AccessFlags::Writable,
-                .name = QStringLiteral("Controller ports"),
+                .flags = AccessFlags::Readable,
+                .name = QStringLiteral("Controller port reads"),
                 .device = &this->controllerComponent,
             };
             this->cpuComponent.bus().registerMapping(controllerMapping);
+            const Bus::Mapping controllerStrobeMapping{
+                .start = 0x4016,
+                .end = 0x4016,
+                .priority = 0,
+                .flags = AccessFlags::Writable,
+                .name = QStringLiteral("Controller strobe"),
+                .device = &this->controllerComponent,
+            };
+            this->cpuComponent.bus().registerMapping(controllerStrobeMapping);
+            const Bus::Mapping apuMapping{
+                .start = 0x4000,
+                .end = 0x4013,
+                .priority = 0,
+                .flags = AccessFlags::Writable,
+                .name = QStringLiteral("APU registers"),
+                .device = &this->apuComponent,
+            };
+            this->cpuComponent.bus().registerMapping(apuMapping);
+            const Bus::Mapping apuStatusMapping{
+                .start = 0x4015,
+                .end = 0x4015,
+                .priority = 0,
+                .flags = AccessFlags::Readable | AccessFlags::Writable,
+                .name = QStringLiteral("APU status"),
+                .device = &this->apuComponent,
+                .translate = [](quint16) {
+                    return static_cast<quint16>(0x15);
+                },
+            };
+            this->cpuComponent.bus().registerMapping(apuStatusMapping);
+            const Bus::Mapping apuFrameCounterMapping{
+                .start = 0x4017,
+                .end = 0x4017,
+                .priority = 0,
+                .flags = AccessFlags::Writable,
+                .name = QStringLiteral("APU frame counter"),
+                .device = &this->apuComponent,
+                .translate = [](quint16) {
+                    return static_cast<quint16>(0x17);
+                },
+            };
+            this->cpuComponent.bus().registerMapping(apuFrameCounterMapping);
     this->cartridgeComponent.connect(this->cpuComponent.bus(), this->ppuComponent.bus());
 }
 
@@ -119,6 +174,14 @@ Controller &Nes::controller() {
 
 const Controller &Nes::controller() const {
     return this->controllerComponent;
+}
+
+Apu &Nes::apu() {
+    return this->apuComponent;
+}
+
+const Apu &Nes::apu() const {
+    return this->apuComponent;
 }
 
 NesClock &Nes::clock() {

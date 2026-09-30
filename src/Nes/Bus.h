@@ -57,6 +57,16 @@ public:
         AddressTranslator translate;
     };
 
+    struct Stats {
+        quint64 reads = 0;
+        quint64 writes = 0;
+        quint64 readCacheHits = 0;
+        quint64 readCacheMisses = 0;
+        quint64 writeCacheHits = 0;
+        quint64 writeCacheMisses = 0;
+        quint64 mappingScanEntries = 0;
+    };
+
     explicit Bus(quint32 addressSpaceSize);
 
     MappingId registerMapping(const Mapping &mapping);
@@ -68,6 +78,7 @@ public:
 
     [[nodiscard]] quint8 openBusValue() const;
     [[nodiscard]] quint32 addressSpaceSize() const;
+    [[nodiscard]] Stats takeStats();
 
 private:
     struct RegisteredMapping {
@@ -75,14 +86,19 @@ private:
         Mapping mapping;
     };
 
-    [[nodiscard]] const RegisteredMapping *findMapping(quint16 address) const;
+    [[nodiscard]] const RegisteredMapping *findMapping(
+        quint16 address, AccessFlags requiredAccess) const;
+    [[nodiscard]] bool hasMapping(quint16 address) const;
     [[nodiscard]] bool overlaps(const Mapping &left, const Mapping &right) const;
+    void invalidateMappingCaches();
 
     quint32 addressSpaceSizeValue;
     quint8 openBus = 0;
     MappingId nextMappingId = 1;
     QVector<RegisteredMapping> mappings;
-    mutable qsizetype cachedMappingIndex = -1;
+    mutable qsizetype cachedReadMappingIndex = -1;
+    mutable qsizetype cachedWriteMappingIndex = -1;
+    mutable Stats statistics;
 };
 
 class RamBusDevice final : public BusDevice {

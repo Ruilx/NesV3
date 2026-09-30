@@ -55,6 +55,7 @@ QVector<quint8> demoTile(int nametable, int tileX, int tileY) {
 }
 
 NesScene::NesScene(QObject *parent) : QGraphicsScene(parent) {
+    setItemIndexMethod(QGraphicsScene::NoIndex);
     setSceneRect(0, 0, NametableWidth, NametableHeight);
     this->tileStates.resize(NametableColumns * NametableRows * TilesWide * TilesHigh);
 
@@ -283,6 +284,7 @@ void NesScene::layoutNametableCopies(qreal scrollX, qreal scrollY) {
         if (!placement.hasProjectedPosition
                 || placement.projectedPosition != projectedPosition) {
             placement.item->setPos(projectedPosition);
+            ++this->updateStats.nametableSetPosCalls;
             placement.projectedPosition = projectedPosition;
             placement.hasProjectedPosition = true;
         }

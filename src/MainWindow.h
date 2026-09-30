@@ -3,8 +3,10 @@
 
 #include <QMainWindow>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QTimer>
 #include <QString>
+#include <QTextStream>
 
 #include "Nes.h"
 
@@ -25,6 +27,8 @@ private:
 	void openPatternTableDialog();
 	void openRom();
 	void closeRom();
+	void openPerformanceLog(const QString &romPath);
+	void closePerformanceLog();
 	void runSimulationFrame();
 	void updateWindowTitle();
 	void setDebugInputMode(bool enabled);
@@ -34,12 +38,15 @@ private:
 	NesView *view = nullptr;
 	QTimer simulationTimer;
 	QElapsedTimer performanceTimer;
+	QFile performanceLogFile;
+	QTextStream performanceLogStream;
 	quint64 performanceFrameCount = 0;
 	quint64 performanceCoreNanoseconds = 0;
 	quint64 performanceSceneNanoseconds = 0;
 	quint64 performanceDirtyTiles = 0;
 	quint64 performanceDecodedTiles = 0;
 	quint64 performanceUpdatedTiles = 0;
+	quint64 performanceNametableSetPos = 0;
 	QString currentRomPath;
 };
 #endif // MAINWINDOW_H

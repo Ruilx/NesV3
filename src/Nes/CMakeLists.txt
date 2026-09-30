@@ -4,6 +4,8 @@ cmake_minimum_required(VERSION 3.5)
 add_library(Nes STATIC
     Bus.cpp
     Bus.h
+    Apu.cpp
+    Apu.h
     Cartridge.cpp
     Cartridge.h
     Controller.cpp

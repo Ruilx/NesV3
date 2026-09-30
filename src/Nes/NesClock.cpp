@@ -2,6 +2,10 @@
 
 #include <chrono>
 
+namespace {
+constexpr bool EnableClockTimingSampling = true;
+}
+
 NesClock::NesClock(TickCallback cpuTick, TickCallback ppuTick)
     : NesClock(std::move(cpuTick), std::move(ppuTick), TimingProfile()) {
 }
@@ -21,16 +25,22 @@ void NesClock::tick() {
         this->cpuPhase = 0;
         if (this->cpuTickCallback) {
             ++this->cpuCallbackCount;
-            const bool sample = (this->cpuCallbackCount & 0xFF) == 0;
-            const auto start = sample
-                    ? std::chrono::steady_clock::now()
-                    : std::chrono::steady_clock::time_point();
+            bool sample = false;
+            std::chrono::steady_clock::time_point start;
+            if constexpr (EnableClockTimingSampling) {
+                sample = (this->cpuCallbackCount & 0xFF) == 0;
+                if (sample) {
+                    start = std::chrono::steady_clock::now();
+                }
+            }
             this->cpuTickCallback();
-            if (sample) {
+            if constexpr (EnableClockTimingSampling) {
+                if (sample) {
                 this->timingStats.cpuNanoseconds += static_cast<quint64>(
                     std::chrono::duration_cast<std::chrono::nanoseconds>(
                         std::chrono::steady_clock::now() - start).count());
                 ++this->timingStats.cpuSamples;
+                }
             }
         }
         ++this->cpuCyclesValue;
@@ -38,16 +48,22 @@ void NesClock::tick() {
 
     if (this->ppuTickCallback) {
         ++this->ppuCallbackCount;
-        const bool sample = (this->ppuCallbackCount & 0xFF) == 0;
-        const auto start = sample
-            ? std::chrono::steady_clock::now()
-            : std::chrono::steady_clock::time_point();
+        bool sample = false;
+        std::chrono::steady_clock::time_point start;
+        if constexpr (EnableClockTimingSampling) {
+            sample = (this->ppuCallbackCount & 0xFF) == 0;
+            if (sample) {
+                start = std::chrono::steady_clock::now();
+            }
+        }
         this->ppuTickCallback();
-        if (sample) {
-            this->timingStats.ppuNanoseconds += static_cast<quint64>(
-                std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    std::chrono::steady_clock::now() - start).count());
-            ++this->timingStats.ppuSamples;
+        if constexpr (EnableClockTimingSampling) {
+            if (sample) {
+                this->timingStats.ppuNanoseconds += static_cast<quint64>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - start).count());
+                ++this->timingStats.ppuSamples;
+            }
         }
     }
     ++this->ppuTicksValue;

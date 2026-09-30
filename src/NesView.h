@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QGraphicsView>
+#include <QElapsedTimer>
 #include <QTimer>
 
 class NesView : public QGraphicsView {
@@ -19,10 +20,18 @@ public:
     void setInputMode(InputMode mode);
     void resetZoom();
 
+    struct PaintStats {
+        quint64 calls = 0;
+        quint64 nanoseconds = 0;
+    };
+
+    [[nodiscard]] PaintStats takePaintStats();
+
 signals:
     void buttonChanged(int button, bool pressed);
 
 protected:
+    void paintEvent(QPaintEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
@@ -44,4 +53,5 @@ private:
     bool scrollRight = false;
     bool scrollUp = false;
     bool scrollDown = false;
+    PaintStats paintStats;
 };

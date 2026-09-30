@@ -29,7 +29,7 @@ bool Bus::unregisterMapping(MappingId id) {
             continue;
         }
         this->mappings.removeAt(index);
-        this->cachedMappingIndex = -1;
+        this->invalidateMappingCaches();
         return true;
     }
     return false;
@@ -38,7 +38,15 @@ bool Bus::unregisterMapping(MappingId id) {
 bool Bus::setMappingFlags(MappingId id, AccessFlags flags) {
     for (RegisteredMapping &registered : this->mappings) {
         if (registered.id == id) {
+            Mapping candidate = registered.mapping;
+            candidate.flags = flags;
+            for (const RegisteredMapping &other : this->mappings) {
+                if (other.id != id && overlaps(other.mapping, candidate)) {
+                    return false;
+                }
+            }
             registered.mapping.flags = flags;
+            this->invalidateMappingCaches();
             return true;
         }
     }
@@ -46,17 +54,15 @@ bool Bus::setMappingFlags(MappingId id, AccessFlags flags) {
 }
 
 Bus::AccessResult Bus::read(quint16 address, quint8 &value) {
-    const RegisteredMapping *registered = findMapping(address);
+    ++this->statistics.reads;
+    const RegisteredMapping *registered = findMapping(address, AccessFlags::Readable);
     if (registered == nullptr) {
         value = this->openBus;
-        return AccessResult::Unmapped;
+        return hasMapping(address) ? AccessResult::PermissionDenied
+                                    : AccessResult::Unmapped;
     }
 
     const Mapping &mapping = registered->mapping;
-    if (!hasAccessFlag(mapping.flags, AccessFlags::Readable)) {
-        value = this->openBus;
-        return AccessResult::PermissionDenied;
-    }
 
     const quint16 deviceAddress = mapping.translate
         ? mapping.translate(address)
@@ -71,17 +77,15 @@ Bus::AccessResult Bus::read(quint16 address, quint8 &value) {
 }
 
 Bus::AccessResult Bus::write(quint16 address, quint8 value) {
-    const RegisteredMapping *registered = findMapping(address);
+    ++this->statistics.writes;
+    const RegisteredMapping *registered = findMapping(address, AccessFlags::Writable);
     if (registered == nullptr) {
         this->openBus = value;
-        return AccessResult::Unmapped;
+        return hasMapping(address) ? AccessResult::PermissionDenied
+                                   : AccessResult::Unmapped;
     }
 
     const Mapping &mapping = registered->mapping;
-    if (!hasAccessFlag(mapping.flags, AccessFlags::Writable)) {
-        this->openBus = value;
-        return AccessResult::PermissionDenied;
-    }
 
     const quint16 deviceAddress = mapping.translate
         ? mapping.translate(address)
@@ -103,34 +107,75 @@ quint32 Bus::addressSpaceSize() const {
     return this->addressSpaceSizeValue;
 }
 
-const Bus::RegisteredMapping *Bus::findMapping(quint16 address) const {
-    if (this->cachedMappingIndex >= 0
-        && this->cachedMappingIndex < this->mappings.size()) {
-        const RegisteredMapping &cached =
-            this->mappings[this->cachedMappingIndex];
+Bus::Stats Bus::takeStats() {
+    const Stats result = this->statistics;
+    this->statistics = Stats();
+    return result;
+}
+
+const Bus::RegisteredMapping *Bus::findMapping(
+        quint16 address, AccessFlags requiredAccess) const {
+    qsizetype &cachedIndex = requiredAccess == AccessFlags::Readable
+        ? this->cachedReadMappingIndex
+        : this->cachedWriteMappingIndex;
+    if (cachedIndex >= 0 && cachedIndex < this->mappings.size()) {
+        const RegisteredMapping &cached = this->mappings[cachedIndex];
         if (address >= cached.mapping.start && address <= cached.mapping.end) {
-            return &cached;
+            if (hasAccessFlag(cached.mapping.flags, requiredAccess)) {
+                if (requiredAccess == AccessFlags::Readable) {
+                    ++this->statistics.readCacheHits;
+                } else {
+                    ++this->statistics.writeCacheHits;
+                }
+                return &cached;
+            }
         }
+    }
+
+    if (requiredAccess == AccessFlags::Readable) {
+        ++this->statistics.readCacheMisses;
+    } else {
+        ++this->statistics.writeCacheMisses;
     }
 
     const RegisteredMapping *best = nullptr;
     for (qsizetype index = 0; index < this->mappings.size(); ++index) {
+        ++this->statistics.mappingScanEntries;
         const RegisteredMapping &registered = this->mappings[index];
         const Mapping &mapping = registered.mapping;
         if (address < mapping.start || address > mapping.end) {
             continue;
         }
+        if (!hasAccessFlag(mapping.flags, requiredAccess)) {
+            continue;
+        }
 
         if (best == nullptr || mapping.priority > best->mapping.priority) {
             best = &registered;
-            this->cachedMappingIndex = index;
+            cachedIndex = index;
         }
     }
     return best;
 }
 
 bool Bus::overlaps(const Mapping &left, const Mapping &right) const {
-    return left.start <= right.end && right.start <= left.end;
+    const bool addressOverlap = left.start <= right.end && right.start <= left.end;
+    const quint8 sharedFlags = static_cast<quint8>(left.flags & right.flags);
+    return addressOverlap && sharedFlags != 0;
+}
+
+bool Bus::hasMapping(quint16 address) const {
+    for (const RegisteredMapping &registered : this->mappings) {
+        if (address >= registered.mapping.start && address <= registered.mapping.end) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Bus::invalidateMappingCaches() {
+    this->cachedReadMappingIndex = -1;
+    this->cachedWriteMappingIndex = -1;
 }
 
 RamBusDevice::RamBusDevice(Ram &ram)

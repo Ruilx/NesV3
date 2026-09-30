@@ -9,7 +9,12 @@
 
 #include <cmath>
 
+NesNametableItem::PositionStats NesNametableItem::statistics;
+
 namespace {
+constexpr bool EnableRasterScrollTileProjection = true;
+constexpr qreal PositionDeltaEpsilon = 0.001;
+
 qreal wrappedCoordinate(qreal basePosition, qreal scrollOffset, qreal period, qreal viewportSize) {
     qreal position = basePosition - scrollOffset;
     while (position < -viewportSize) {
@@ -64,7 +69,7 @@ void NesNametableItem::setRasterScroll(
         const QVector<QPointF> &scrollByScanline,
         const QPointF &basePosition,
         const QPointF &parentPosition) {
-    if (scrollByScanline.isEmpty()) {
+    if (!EnableRasterScrollTileProjection || scrollByScanline.isEmpty()) {
         return;
     }
 
@@ -79,7 +84,20 @@ void NesNametableItem::setRasterScroll(
             const QPointF tilePosition(
                 tileX * 8 + rowNametablePosition.x() - parentPosition.x(),
                 tileY * 8 + rowNametablePosition.y() - parentPosition.y());
-            if (this->projectedTilePositions.at(tileIndex) != tilePosition) {
+            ++NesNametableItem::statistics.rasterPositionChecks;
+            const QPointF previousPosition =
+                this->projectedTilePositions.at(tileIndex);
+            const qreal deltaX = qAbs(tilePosition.x() - previousPosition.x());
+            const qreal deltaY = qAbs(tilePosition.y() - previousPosition.y());
+            if (previousPosition == tilePosition) {
+                ++NesNametableItem::statistics.zeroDeltaPositionChecks;
+            } else {
+                if (deltaX <= PositionDeltaEpsilon
+                        && deltaY <= PositionDeltaEpsilon) {
+                    ++NesNametableItem::statistics.smallDeltaPositionChecks;
+                }
+                ++NesNametableItem::statistics.tileSetPosCalls;
+                ++NesNametableItem::statistics.tilePositionChanges;
                 this->tiles.value(tileIndex)->setPos(tilePosition);
                 this->projectedTilePositions[tileIndex] = tilePosition;
             }
@@ -106,4 +124,12 @@ void NesNametableItem::setTilePixels(
     const int tileIndex = tileY * (Width / 8) + tileX;
     this->tiles.value(tileIndex)->setPaletteIndices(
             tilePixels, tileSubpalette, this->palette);
+}
+
+void NesNametableItem::resetPositionStats() {
+    NesNametableItem::statistics = PositionStats();
+}
+
+NesNametableItem::PositionStats NesNametableItem::positionStats() {
+    return NesNametableItem::statistics;
 }

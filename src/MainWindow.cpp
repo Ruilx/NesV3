@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "NesPalette.h"
+#include "NesNametableItem.h"
 #include "NesScene.h"
 #include "NesTileItem.h"
 #include "NesView.h"
@@ -11,12 +12,15 @@
 #include <QAction>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QDir>
+#include <QDateTime>
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QMessageBox>
 #include <QMenu>
 #include <QMenuBar>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QStatusBar>
 
 namespace {
@@ -118,6 +122,49 @@ void MainWindow::setDebugInputMode(bool enabled) {
 
 MainWindow::~MainWindow() {
     this->simulationTimer.stop();
+    closePerformanceLog();
+}
+
+void MainWindow::openPerformanceLog(const QString &romPath) {
+    closePerformanceLog();
+
+    const QString logDirectory = QStandardPaths::writableLocation(
+        QStandardPaths::AppLocalDataLocation);
+    if (!QDir().mkpath(logDirectory)) {
+        qWarning() << "Unable to create performance log directory:" << logDirectory;
+        return;
+    }
+
+    const QString romName = QFileInfo(romPath).completeBaseName();
+    const QString timestamp = QDateTime::currentDateTime().toString(
+        QStringLiteral("yyyyMMdd-HHmmss"));
+    this->performanceLogFile.setFileName(
+        QDir(logDirectory).filePath(
+            QStringLiteral("performance-%1-%2.log").arg(romName, timestamp)));
+    if (!this->performanceLogFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        qWarning() << "Unable to open performance log:"
+                   << this->performanceLogFile.fileName()
+                   << this->performanceLogFile.errorString();
+        return;
+    }
+
+    this->performanceLogStream.setDevice(&this->performanceLogFile);
+    this->performanceLogStream
+        << "ROM=" << romPath
+        << " mapper=" << this->nes.cartridge().header().mapperNumber
+        << "\n";
+    this->performanceLogStream.flush();
+    qInfo() << "Performance log:" << this->performanceLogFile.fileName();
+}
+
+void MainWindow::closePerformanceLog() {
+    if (!this->performanceLogFile.isOpen()) {
+        return;
+    }
+
+    this->performanceLogStream.flush();
+    this->performanceLogStream.setDevice(nullptr);
+    this->performanceLogFile.close();
 }
 
 void MainWindow::savePalette() {
@@ -176,8 +223,9 @@ void MainWindow::openRom() {
     this->nes.clock().reset();
     this->scene->invalidateTileCache();
     this->scene->updateFromPpu(this->nes.ppu());
-    this->simulationTimer.start();
     this->currentRomPath = path;
+    openPerformanceLog(path);
+    this->simulationTimer.start();
     updateWindowTitle();
     if (auto *view = qobject_cast<NesView *>(this->centralWidget())) {
         view->setFocus(Qt::OtherFocusReason);
@@ -187,6 +235,7 @@ void MainWindow::openRom() {
 
 void MainWindow::closeRom() {
     this->simulationTimer.stop();
+    closePerformanceLog();
     this->nes.cartridge().unload();
     this->nes.cartridge().connect(
             this->nes.cpu().bus(), this->nes.ppu().bus());
@@ -220,6 +269,7 @@ void MainWindow::runSimulationFrame() {
     this->performanceDirtyTiles += sceneStats.dirtyTiles;
     this->performanceDecodedTiles += sceneStats.decodedTiles;
     this->performanceUpdatedTiles += sceneStats.updatedTiles;
+    this->performanceNametableSetPos += sceneStats.nametableSetPosCalls;
 
     const qint64 elapsedMilliseconds = this->performanceTimer.elapsed();
     if (elapsedMilliseconds < 1000) {
@@ -238,10 +288,39 @@ void MainWindow::runSimulationFrame() {
         / static_cast<double>(this->performanceFrameCount) / 1000000.0;
     const double averageSceneMs = this->performanceSceneNanoseconds
         / static_cast<double>(this->performanceFrameCount) / 1000000.0;
+    const NesTileItem::PaintStats tileStats = NesTileItem::paintStats();
+    const double paintMs = tileStats.paintNanoseconds / 1000000.0;
+    const double imageRebuildMs = tileStats.imageRebuildNanoseconds / 1000000.0;
+    const NesClock::TimingStats clockStats = this->nes.clock().takeTimingStats();
+    const double clockCpuMs = clockStats.cpuNanoseconds / 1000000.0;
+    const double clockPpuMs = clockStats.ppuNanoseconds / 1000000.0;
+    const Bus::Stats busStats = this->nes.cpu().bus().takeStats();
+    const Apu::Stats apuStats = this->nes.apu().takeStats();
+    const NesView::PaintStats viewPaintStats = this->view->takePaintStats();
+    const double viewPaintMs = viewPaintStats.nanoseconds / 1000000.0;
+    const NesNametableItem::PositionStats positionStats =
+        NesNametableItem::positionStats();
     const QString message = QStringLiteral(
-        "FPS %1 | core %2 ms | PC %3:%4 now %5 SP %6 int %7 NMI %8 RTI %9 | maskWrites %10 lastMask $%11 DMA %12 spriteOut %13 spriteFail %14 | PPU $2000 %15 $2001 %16 $2002 %17 | buttons $%18 seen $%19")
+        "FPS %1 | core %2 ms clockCpu %3 ms clockPpu %4 ms samples %5/%6 | scene %7 ms | dirty %8 decoded %9 updated %10 | parentSetPos %11 tileSetPos %12 zeroDelta %13 smallDelta %14 checks %15 | paint %16 calls %17 ms rebuild %18 calls %19 ms | PC %20:%21 now %22 SP %23 int %24 NMI %25 RTI %26 | maskWrites %27 lastMask $%28 DMA %29 spriteOut %30 spriteFail %31 | PPU $2000 %32 $2001 %33 $2002 %34 | buttons $%35 seen $%36")
         .arg(simulationFps, 0, 'f', 1)
         .arg(averageCoreMs, 0, 'f', 3)
+        .arg(clockCpuMs, 0, 'f', 3)
+        .arg(clockPpuMs, 0, 'f', 3)
+        .arg(clockStats.cpuSamples)
+        .arg(clockStats.ppuSamples)
+        .arg(averageSceneMs, 0, 'f', 3)
+        .arg(this->performanceDirtyTiles)
+        .arg(this->performanceDecodedTiles)
+        .arg(this->performanceUpdatedTiles)
+        .arg(this->performanceNametableSetPos)
+        .arg(positionStats.tileSetPosCalls)
+        .arg(positionStats.zeroDeltaPositionChecks)
+        .arg(positionStats.smallDeltaPositionChecks)
+        .arg(positionStats.rasterPositionChecks)
+        .arg(tileStats.paintCalls)
+        .arg(paintMs, 0, 'f', 3)
+        .arg(tileStats.imageRebuilds)
+        .arg(imageRebuildMs, 0, 'f', 3)
         .arg(QString::number(cpuStats.lastPc, 16).rightJustified(4, QLatin1Char('0')))
         .arg(QString::number(cpuStats.lastOpcode, 16).rightJustified(2, QLatin1Char('0')))
         .arg(QString::number(cpuRegisters.pc, 16).rightJustified(4, QLatin1Char('0')))
@@ -263,6 +342,37 @@ void MainWindow::runSimulationFrame() {
              .rightJustified(2, QLatin1Char('0')));
     this->statusBar()->showMessage(message);
     qInfo().noquote() << message;
+    if (this->performanceLogFile.isOpen()) {
+        this->performanceLogStream << message << '\n';
+        this->performanceLogStream.flush();
+    }
+    const QString diagnostics = QStringLiteral(
+        "Diagnostics clockCpuMs %1 clockPpuMs %2 clockSamples %3/%4 "
+        "busReadWrite %5/%6 busCacheHit %7/%8 busCacheMiss %9/%10 "
+        "busScanEntries %11 apuClock %12 apuReadWrite %13/%14 apuIrqChanges %15 "
+        "viewPaint %16 calls %17 ms")
+        .arg(clockCpuMs, 0, 'f', 3)
+        .arg(clockPpuMs, 0, 'f', 3)
+        .arg(clockStats.cpuSamples)
+        .arg(clockStats.ppuSamples)
+        .arg(busStats.reads)
+        .arg(busStats.writes)
+        .arg(busStats.readCacheHits)
+        .arg(busStats.writeCacheHits)
+        .arg(busStats.readCacheMisses)
+        .arg(busStats.writeCacheMisses)
+        .arg(busStats.mappingScanEntries)
+        .arg(apuStats.clockCalls)
+        .arg(apuStats.reads)
+        .arg(apuStats.writes)
+        .arg(apuStats.irqLineChanges)
+        .arg(viewPaintStats.calls)
+        .arg(viewPaintMs, 0, 'f', 3);
+    qInfo().noquote() << diagnostics;
+    if (this->performanceLogFile.isOpen()) {
+        this->performanceLogStream << diagnostics << '\n';
+        this->performanceLogStream.flush();
+    }
     if (Mapper001 *mapper = this->nes.cartridge().mapper001()) {
         const Mapper001::Stats mapperStats = mapper->takeStats();
         qInfo().noquote()
@@ -281,7 +391,9 @@ void MainWindow::runSimulationFrame() {
     this->performanceDirtyTiles = 0;
     this->performanceDecodedTiles = 0;
     this->performanceUpdatedTiles = 0;
+    this->performanceNametableSetPos = 0;
     NesTileItem::resetPaintStats();
+    NesNametableItem::resetPositionStats();
 }
 
 void MainWindow::updateWindowTitle() {

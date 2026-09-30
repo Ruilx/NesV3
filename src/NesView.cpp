@@ -4,6 +4,7 @@
 
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPaintEvent>
 #include <QScrollBar>
 #include <QWheelEvent>
 #include <QDebug>
@@ -25,6 +26,20 @@ NesView::NesView(QWidget *parent) : QGraphicsView(parent) {
     this->scrollTimer.setInterval(16);
     connect(&this->scrollTimer, &QTimer::timeout, this, &NesView::scrollNametable);
     scale(this->zoom, this->zoom);
+}
+
+void NesView::paintEvent(QPaintEvent *event) {
+    QElapsedTimer timer;
+    timer.start();
+    QGraphicsView::paintEvent(event);
+    ++this->paintStats.calls;
+    this->paintStats.nanoseconds += static_cast<quint64>(timer.nsecsElapsed());
+}
+
+NesView::PaintStats NesView::takePaintStats() {
+    const PaintStats result = this->paintStats;
+    this->paintStats = PaintStats();
+    return result;
 }
 
 qreal NesView::zoomFactor() const {

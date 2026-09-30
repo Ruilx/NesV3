@@ -3,6 +3,7 @@
 #include "Cartridge.h"
 #include "Controller.h"
 #include "Cpu.h"
+#include "Apu.h"
 #include "Ppu.h"
 #include "NesClock.h"
 
@@ -22,6 +23,8 @@ public:
     [[nodiscard]] const Cartridge &cartridge() const;
     [[nodiscard]] Controller &controller();
     [[nodiscard]] const Controller &controller() const;
+    [[nodiscard]] Apu &apu();
+    [[nodiscard]] const Apu &apu() const;
     [[nodiscard]] NesClock &clock();
     [[nodiscard]] const NesClock &clock() const;
     void runMasterTicks(quint64 ticks);
@@ -32,5 +35,6 @@ private:
     Ppu ppuComponent;
     Controller controllerComponent;
     Cartridge cartridgeComponent;
+    Apu apuComponent;
     NesClock clockComponent;
 };

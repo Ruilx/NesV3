@@ -9,6 +9,13 @@
 
 class NesNametableItem : public QGraphicsItem {
 public:
+    struct PositionStats {
+        quint64 rasterPositionChecks = 0;
+        quint64 zeroDeltaPositionChecks = 0;
+        quint64 smallDeltaPositionChecks = 0;
+        quint64 tileSetPosCalls = 0;
+        quint64 tilePositionChanges = 0;
+    };
     static constexpr int Width = 256;
     static constexpr int Height = 240;
 
@@ -24,6 +31,8 @@ public:
         const QPointF &basePosition,
         const QPointF &projectedPosition);
     void setTilePixels(int tileX, int tileY, const QVector<quint8> &pixels);
+    static void resetPositionStats();
+    [[nodiscard]] static PositionStats positionStats();
         void setTilePixels(
             int tileX,
             int tileY,
@@ -37,4 +46,5 @@ private:
     QVector<QPointF> projectedTilePositions;
     NesPalette palette;
     QVector<quint8> subpalette = {0x0F, 0x01, 0x21, 0x31};
+    static PositionStats statistics;
 };
