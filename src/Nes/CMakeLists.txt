@@ -11,6 +11,8 @@ add_library(Nes STATIC
     ApuChannelRegistry.h
     PulseChannel.cpp
     PulseChannel.h
+    TriangleChannel.cpp
+    TriangleChannel.h
     Cartridge.cpp
     Cartridge.h
     Controller.cpp

@@ -1,5 +1,6 @@
 #include "Apu.h"
 #include "PulseChannel.h"
+#include "TriangleChannel.h"
 
 Apu::Apu() {
     this->reset();
@@ -18,6 +19,14 @@ Apu::Apu() {
             .registerStart = 0x04,
             .registerEnd = 0x07,
             .statusMask = 0x02,
+        });
+    this->registerChannel(
+        std::make_unique<TriangleChannel>(),
+        ApuChannelRegistry::ChannelDescriptor{
+            .id = QStringLiteral("triangle"),
+            .registerStart = 0x08,
+            .registerEnd = 0x0B,
+            .statusMask = 0x04,
         });
 }
 

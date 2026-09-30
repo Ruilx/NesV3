@@ -1,5 +1,6 @@
 #include "Nes.h"
 #include "PulseChannel.h"
+#include "TriangleChannel.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -162,19 +163,19 @@ void testRegisteredChannelLifecycle() {
         std::move(channel),
         ApuChannelRegistry::ChannelDescriptor{
             .id = QStringLiteral("dummy"),
-            .registerStart = 0x08,
-            .registerEnd = 0x0B,
-            .statusMask = 0x04,
+            .registerStart = 0x10,
+            .registerEnd = 0x13,
+            .statusMask = 0x10,
         });
 
     check(handle != 0, "registered channel should receive a handle");
-    check(apu.write(0x0A, 0xA5), "registered channel write should be handled");
+    check(apu.write(0x12, 0xA5), "registered channel write should be handled");
     check(channelPointer->lastOffset == 2 && channelPointer->lastValue == 0xA5,
         "registered channel should receive translated register writes");
 
-    apu.write(0x15, 0x04);
+    apu.write(0x15, 0x10);
     check(channelPointer->isEnabled(), "$4015 should enable registered channels");
-    check((apu.status().channelEnable & 0x04) != 0,
+    check((apu.status().channelEnable & 0x10) != 0,
         "$4015 status should include registered channel state");
 
     apu.clock();
@@ -279,6 +280,52 @@ void testPulseSweep() {
     muted.writeRegister(1, 0x80);
     check(muted.sweepMutes(), "positive sweep targets above 0x7ff should mute");
 }
+
+void testTriangleChannel() {
+    TriangleChannel triangle;
+    triangle.setEnabled(true);
+    check(triangle.writeRegister(0, 0x85),
+        "triangle control register should be accepted");
+    check(triangle.writeRegister(2, 0x08),
+        "triangle timer low register should be accepted");
+    check(triangle.writeRegister(3, 0x08),
+        "triangle length register should be accepted");
+    check(triangle.timerPeriod() == 8 && triangle.lengthCounter() == 254,
+        "triangle should decode timer and length fields");
+    check(triangle.linearCounter() == 0 && !triangle.isActive(),
+        "triangle should wait for its quarter frame linear reload");
+
+    triangle.onQuarterFrame();
+    check(triangle.linearCounter() == 5 && triangle.isActive(),
+        "triangle quarter frame should reload the linear counter");
+    check(triangle.sample() == 1.0F,
+        "triangle should start at the top of its waveform");
+    triangle.clockCpuCycle();
+    check(triangle.sequenceIndex() == 1,
+        "triangle timer should advance its 32-step sequence");
+
+    triangle.onHalfFrame();
+    check(triangle.lengthCounter() == 254,
+        "triangle control halt should preserve its length counter");
+    triangle.writeRegister(0, 0x05);
+    triangle.onQuarterFrame();
+    triangle.onQuarterFrame();
+    check(triangle.linearCounter() == 4,
+        "triangle linear counter should decrement after reload is cleared");
+    triangle.setEnabled(false);
+    check(!triangle.isActive() && triangle.lengthCounter() == 0,
+        "disabling triangle should clear its length counter");
+}
+
+void testApuBuiltInTriangleChannel() {
+    Apu apu;
+    apu.write(0x08, 0x87);
+    apu.write(0x0A, 0x08);
+    apu.write(0x0B, 0x08);
+    apu.write(0x15, 0x04);
+    check((apu.status().channelEnable & 0x04) != 0,
+        "APU should expose the built-in triangle status bit");
+}
 }
 
 int main() {
@@ -289,6 +336,8 @@ int main() {
     testPulseChannelWaveform();
     testApuBuiltInPulseChannels();
     testPulseSweep();
+    testTriangleChannel();
+    testApuBuiltInTriangleChannel();
     std::cout << "ApuTests passed\n";
     return EXIT_SUCCESS;
 }
