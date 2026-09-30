@@ -24,6 +24,8 @@
 #include <QStandardPaths>
 #include <QStatusBar>
 
+#include <chrono>
+
 namespace {
 NesPalette loadStoredPalette() {
     QSettings settings;
@@ -329,15 +331,19 @@ void MainWindow::runSimulationFrame() {
         return;
     }
 
-    QElapsedTimer coreTimer;
-    coreTimer.start();
+    const std::chrono::steady_clock::time_point coreStart =
+        std::chrono::steady_clock::now();
     this->nes.runFrame();
-    const quint64 coreNanoseconds = static_cast<quint64>(coreTimer.nsecsElapsed());
+    const quint64 coreNanoseconds = static_cast<quint64>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - coreStart).count());
 
-    QElapsedTimer sceneTimer;
-    sceneTimer.start();
+    const std::chrono::steady_clock::time_point sceneStart =
+        std::chrono::steady_clock::now();
     this->scene->updateFromPpu(this->nes.ppu());
-    const quint64 sceneNanoseconds = static_cast<quint64>(sceneTimer.nsecsElapsed());
+    const quint64 sceneNanoseconds = static_cast<quint64>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - sceneStart).count());
     const NesScene::UpdateStats sceneStats = this->scene->takeUpdateStats();
 
     ++this->performanceFrameCount;
