@@ -4,9 +4,11 @@
 #include <QMainWindow>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QStringList>
 #include <QTimer>
 #include <QString>
 #include <QTextStream>
+#include <QVector>
 
 #include "Nes.h"
 
@@ -20,6 +22,8 @@ class MainWindow : public QMainWindow
 public:
 	MainWindow(QWidget *parent = nullptr);
 	~MainWindow() override;
+	bool startBenchmark(
+		const QStringList &romPaths, const QVector<int> &durationsMilliseconds);
 
 private:
 	void savePalette();
@@ -27,7 +31,16 @@ private:
 	void openPatternTableDialog();
 	void openRom();
 	void closeRom();
-	void openPerformanceLog(const QString &romPath);
+	bool loadRomFromPath(
+		const QString &path,
+		QString *errorMessage = nullptr,
+		const QString &testTarget = QStringLiteral("manual"),
+		int testDurationMilliseconds = 0);
+	void runNextBenchmarkRom();
+	void openPerformanceLog(
+		const QString &romPath,
+		const QString &testTarget,
+		int testDurationMilliseconds);
 	void closePerformanceLog();
 	void runSimulationFrame();
 	void updateWindowTitle();
@@ -48,5 +61,11 @@ private:
 	quint64 performanceUpdatedTiles = 0;
 	quint64 performanceNametableSetPos = 0;
 	QString currentRomPath;
+	QString currentTestTarget;
+	QStringList benchmarkRomPaths;
+	QStringList benchmarkTargets;
+	QVector<int> benchmarkDurationsMilliseconds;
+	int benchmarkRomIndex = 0;
+	QElapsedTimer benchmarkRomTimer;
 };
 #endif // MAINWINDOW_H
