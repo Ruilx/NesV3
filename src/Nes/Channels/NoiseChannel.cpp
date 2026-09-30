@@ -56,6 +56,10 @@ bool NoiseChannel::writeRegister(quint16 offset, quint8 value) {
     }
 }
 
+void NoiseChannel::contributeAudio(AudioMixContext &context) const {
+    context.add(AudioMixBus::NativeNoise, this->sample());
+}
+
 float NoiseChannel::sample() const {
     if (!this->isActive() || (this->shift & 0x01) != 0) {
         return 0.0F;

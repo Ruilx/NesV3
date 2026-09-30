@@ -68,6 +68,7 @@ private:
     Stats statistics;
     bool irqLinePending = false;
     DpcmChannel dpcmChannel;
+    ApuMixer mixer;
 
     void writeFrameCounter(quint8 value);
     void emitFrameCounterEvent(FrameCounterEvent event);

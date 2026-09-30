@@ -76,6 +76,10 @@ bool DpcmChannel::writeRegister(quint16 offset, quint8 value) {
     }
 }
 
+void DpcmChannel::contributeAudio(AudioMixContext &context) const {
+    context.add(AudioMixBus::NativeDpcm, this->sample());
+}
+
 void DpcmChannel::setEnabled(bool value) {
     if (this->enabled == value) {
         return;

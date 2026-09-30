@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../ApuMixer.h"
+
 #include <QtGlobal>
 
 #include <functional>
@@ -14,6 +16,7 @@ public:
     void reset();
     void clockCpuCycle();
     bool writeRegister(quint16 offset, quint8 value);
+    void contributeAudio(AudioMixContext &context) const;
     void setEnabled(bool enabled);
     [[nodiscard]] bool isEnabled() const;
     [[nodiscard]] bool isActive() const;

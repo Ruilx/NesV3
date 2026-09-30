@@ -58,6 +58,10 @@ bool TriangleChannel::writeRegister(quint16 offset, quint8 value) {
     }
 }
 
+void TriangleChannel::contributeAudio(AudioMixContext &context) const {
+    context.add(AudioMixBus::NativeTriangle, this->sample());
+}
+
 float TriangleChannel::sample() const {
     if (!this->isActive() || this->timerPeriod() < 2) {
         return 0.0F;

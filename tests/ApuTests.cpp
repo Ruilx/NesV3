@@ -34,6 +34,9 @@ public:
         return true;
     }
 
+    void contributeAudio(AudioMixContext &) const override {
+    }
+
     float sample() const override {
         return 0.0F;
     }
@@ -59,6 +62,19 @@ public:
 
 private:
     bool enabled = false;
+};
+
+class FixedPipeline final : public AudioMixPipeline {
+public:
+    explicit FixedPipeline(float output) : output(output) {
+    }
+
+    [[nodiscard]] float render(const AudioMixContext &) const override {
+        return this->output;
+    }
+
+private:
+    float output;
 };
 
 struct FrameEvents {
@@ -448,17 +464,49 @@ void testApuBuiltInDpcmChannel() {
 }
 
 void testApuMixer() {
-    check(ApuMixer::mix(0.0F, 0.0F, 0.0F, 0.0F, 0.0F) == 0.0F,
+    const auto mix = [](float pulse, float triangle, float noise, float dpcm,
+                        float expansion = 0.0F) {
+        AudioMixContext context;
+        context.add(AudioMixBus::NativePulse, pulse);
+        context.add(AudioMixBus::NativeTriangle, triangle);
+        context.add(AudioMixBus::NativeNoise, noise);
+        context.add(AudioMixBus::NativeDpcm, dpcm);
+        context.add(AudioMixBus::Expansion, expansion);
+        return ApuMixer().mix(context);
+    };
+
+    check(mix(0.0F, 0.0F, 0.0F, 0.0F) == 0.0F,
         "mixer should be silent when all channels are silent");
-    const float pulseOnly = ApuMixer::mix(1.0F, 0.0F, 0.0F, 0.0F, 0.0F);
-    const float pulsePair = ApuMixer::mix(1.0F, 1.0F, 0.0F, 0.0F, 0.0F);
-    const float tndOnly = ApuMixer::mix(0.0F, 0.0F, 1.0F, 1.0F, 1.0F);
+    const float pulseOnly = mix(1.0F, 0.0F, 0.0F, 0.0F);
+    const float pulsePair = mix(2.0F, 0.0F, 0.0F, 0.0F);
+    const float tndOnly = mix(0.0F, 1.0F, 1.0F, 1.0F);
     check(pulseOnly > 0.0F && pulsePair > pulseOnly,
         "mixer should produce and combine pulse output");
     check(tndOnly > 0.0F && tndOnly < 1.0F,
         "mixer should produce normalized TND output");
-    check(ApuMixer::mix(2.0F, -1.0F, 0.0F, 0.0F, 0.0F) == pulseOnly,
+    check(mix(3.0F, 0.0F, 0.0F, 0.0F) == pulsePair,
         "mixer should clamp normalized pulse inputs");
+}
+
+void testComposableAudioPipelines() {
+    AudioMixContext context;
+    context.add(AudioMixBus::Expansion, 0.25F);
+    context.add(AudioMixBus::Expansion, 0.15F);
+    check(context.value(AudioMixBus::Expansion) == 0.4F,
+        "audio context should accumulate contributions on one bus");
+
+    ApuMixer mixer;
+    const ApuMixer::PipelineHandle handle = mixer.registerPipeline(
+        std::make_unique<FixedPipeline>(0.2F), 10);
+    check(handle != 0 && mixer.mix(context) > 0.59F,
+        "mixer should execute registered pipelines and arrange their outputs");
+    mixer.setMasterVolume(0.5F);
+    check(mixer.masterVolume() == 0.5F && mixer.mix(context) < 0.31F,
+        "mixer should apply master volume after pipeline outputs");
+    check(mixer.unregisterPipeline(handle),
+        "mixer should unregister custom pipelines");
+    check(!mixer.unregisterPipeline(handle),
+        "mixer should reject unregistering a pipeline twice");
 }
 
 void testApuMixedSample() {
@@ -490,6 +538,7 @@ int main() {
     testDpcmChannel();
     testApuBuiltInDpcmChannel();
     testApuMixer();
+    testComposableAudioPipelines();
     testApuMixedSample();
     std::cout << "ApuTests passed\n";
     return EXIT_SUCCESS;

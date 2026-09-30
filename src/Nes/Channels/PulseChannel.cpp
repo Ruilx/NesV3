@@ -72,6 +72,10 @@ bool PulseChannel::writeRegister(quint16 offset, quint8 value) {
     }
 }
 
+void PulseChannel::contributeAudio(AudioMixContext &context) const {
+    context.add(AudioMixBus::NativePulse, this->sample());
+}
+
 float PulseChannel::sample() const {
     if (!this->isActive() || this->sweepMutes()
         || DutySequences[(this->control >> 6) & 0x03][this->sequenceIndex] == 0) {

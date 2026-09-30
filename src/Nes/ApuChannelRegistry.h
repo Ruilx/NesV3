@@ -35,6 +35,7 @@ public:
     [[nodiscard]] quint8 activeMask() const;
     [[nodiscard]] quint8 registeredMask() const;
     [[nodiscard]] float sample(quint8 statusMask) const;
+    void contributeAudio(AudioMixContext &context) const;
 
     void clockCpuCycle();
     void dispatchQuarterFrame();

@@ -182,12 +182,10 @@ Apu::Status Apu::status() const {
 }
 
 float Apu::sample() const {
-    return ApuMixer::mix(
-        this->channelRegistry.sample(0x01),
-        this->channelRegistry.sample(0x02),
-        this->channelRegistry.sample(0x04),
-        this->channelRegistry.sample(0x08),
-        this->dpcmChannel.sample());
+    AudioMixContext context;
+    this->channelRegistry.contributeAudio(context);
+    this->dpcmChannel.contributeAudio(context);
+    return this->mixer.mix(context);
 }
 
 quint8 Apu::registerValue(quint8 index) const {

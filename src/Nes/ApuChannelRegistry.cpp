@@ -84,6 +84,12 @@ float ApuChannelRegistry::sample(quint8 statusMask) const {
     return result;
 }
 
+void ApuChannelRegistry::contributeAudio(AudioMixContext &context) const {
+    for (const Entry &entry : this->entries) {
+        entry.channel->contributeAudio(context);
+    }
+}
+
 void ApuChannelRegistry::clockCpuCycle() {
     for (Entry &entry : this->entries) {
         entry.channel->clockCpuCycle();

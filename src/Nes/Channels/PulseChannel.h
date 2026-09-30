@@ -11,6 +11,7 @@ public:
     void onQuarterFrame() override;
     void onHalfFrame() override;
     bool writeRegister(quint16 offset, quint8 value) override;
+    void contributeAudio(AudioMixContext &context) const override;
     [[nodiscard]] float sample() const override;
     void setEnabled(bool enabled) override;
     [[nodiscard]] bool isEnabled() const override;

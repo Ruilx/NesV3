@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ApuMixer.h"
+
 #include <QtGlobal>
 
 class ApuChannel {
@@ -11,6 +13,7 @@ public:
     virtual void onQuarterFrame() = 0;
     virtual void onHalfFrame() = 0;
     virtual bool writeRegister(quint16 offset, quint8 value) = 0;
+    virtual void contributeAudio(AudioMixContext &context) const = 0;
     virtual float sample() const = 0;
     virtual void setEnabled(bool enabled) = 0;
     [[nodiscard]] virtual bool isEnabled() const = 0;
