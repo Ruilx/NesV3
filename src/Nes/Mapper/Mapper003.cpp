@@ -29,7 +29,13 @@ bool Mapper003::writeCpu(quint16, quint8 value) {
         return false;
     }
 
-    this->chrBank = static_cast<quint8>(value % chrBankCount);
+    const quint8 selectedBank = static_cast<quint8>(value % chrBankCount);
+    if (selectedBank == this->chrBank) {
+        return true;
+    }
+
+    this->chrBank = selectedBank;
+    this->notifyMappingChanged();
     return true;
 }
 

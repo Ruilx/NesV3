@@ -289,14 +289,25 @@ void testInesMapper003ChrBankSwitch() {
         "iNES header should expose Mapper 3");
     cartridge.connect(cpuBus, ppuBus);
 
+    int mappingChangedCount = 0;
+    cartridge.setMappingChangedCallback([&mappingChangedCount]() {
+        ++mappingChangedCount;
+    });
+
     check(read(cpuBus, 0x8000) == 0xA5,
         "Mapper 3 should keep PRG fixed at $8000");
     check(read(ppuBus, 0x0000) == 0x3C,
         "Mapper 3 should select CHR bank zero after reset");
     check(cpuBus.write(0x8000, 0x01) == Bus::AccessResult::Handled,
         "Mapper 3 CPU writes should select a CHR bank");
+    check(mappingChangedCount == 1,
+        "Mapper 3 bank changes should notify the cartridge");
     check(read(ppuBus, 0x0000) == 0x5A,
         "Mapper 3 should expose the selected CHR bank");
+    check(cpuBus.write(0x8000, 0x03) == Bus::AccessResult::Handled,
+        "Mapper 3 writes should handle bank values larger than the bank count");
+    check(mappingChangedCount == 1,
+        "Mapper 3 should not notify when the effective bank is unchanged");
     check(ppuBus.write(0x0000, 0xFF) == Bus::AccessResult::PermissionDenied,
         "Mapper 3 CHR-ROM should remain read-only");
 }
