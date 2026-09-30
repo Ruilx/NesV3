@@ -1,6 +1,7 @@
 #include "NesNametableItem.h"
 
 #include "NesTileItem.h"
+#include "NesPerformanceConfig.h"
 
 #include "NesPalette.h"
 
@@ -12,7 +13,6 @@
 NesNametableItem::PositionStats NesNametableItem::statistics;
 
 namespace {
-constexpr bool EnableRasterScrollTileProjection = true;
 constexpr qreal PositionDeltaEpsilon = 0.001;
 
 qreal wrappedCoordinate(qreal basePosition, qreal scrollOffset, qreal period, qreal viewportSize) {
@@ -69,7 +69,8 @@ void NesNametableItem::setRasterScroll(
         const QVector<QPointF> &scrollByScanline,
         const QPointF &basePosition,
         const QPointF &parentPosition) {
-    if (!EnableRasterScrollTileProjection || scrollByScanline.isEmpty()) {
+        if (!NesPerformanceConfig::EnableRasterScrollTileProjection
+            || scrollByScanline.isEmpty()) {
         return;
     }
 
