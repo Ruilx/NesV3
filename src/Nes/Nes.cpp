@@ -1,5 +1,7 @@
 #include "Nes.h"
 
+#include <utility>
+
 Nes::Nes() : Nes(NesClock::TimingProfile()) {
 }
 
@@ -9,13 +11,35 @@ Nes::Nes(NesClock::TimingProfile timing)
             controllerComponent(),
             cartridgeComponent(),
             apuComponent(),
+            audioOutputShaper(),
+            audioSampleScheduler(AudioSampleScheduler::Configuration{
+                .inputClockNumerator = timing.cpuClockNumerator,
+                .inputClockDenominator = timing.cpuClockDenominator,
+            }),
             clockComponent(
                     [this]() {
                         this->cpuComponent.clock();
                         this->apuComponent.clock();
+                        const quint32 sampleCount =
+                            this->audioSampleScheduler.advance();
+                        if (sampleCount == 0) {
+                            return;
+                        }
+                        const float sample = this->apuComponent.sample();
+                        for (quint32 index = 0; index < sampleCount; ++index) {
+                            this->audioSampleScheduler.submitSample(sample);
+                        }
                     },
                     [this]() { this->ppuComponent.clock(); },
                     timing) {
+                this->audioSampleScheduler.setSampleCallback(
+                    [this](float sample) {
+                        const float shapedSample =
+                            this->audioOutputShaper.process(sample);
+                        if (this->audioSampleCallback) {
+                            this->audioSampleCallback(shapedSample);
+                        }
+                    });
                 this->apuComponent.setIrqCallback(
                     [this](bool pending) {
                         if (pending) {
@@ -202,4 +226,18 @@ void Nes::runMasterTicks(quint64 ticks) {
 
 void Nes::runFrame() {
     this->clockComponent.runFrame();
+}
+
+void Nes::setAudioSampleCallback(
+        AudioSampleScheduler::SampleCallback callback) {
+    this->audioSampleCallback = std::move(callback);
+}
+
+void Nes::resetAudioSampling() {
+    this->audioSampleScheduler.reset();
+    this->audioOutputShaper.reset();
+}
+
+quint64 Nes::generatedAudioSampleCount() const {
+    return this->audioSampleScheduler.generatedSampleCount();
 }

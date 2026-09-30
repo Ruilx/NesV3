@@ -11,6 +11,12 @@ add_library(Nes STATIC
     ApuChannelRegistry.h
     ApuMixer.cpp
     ApuMixer.h
+    AudioOutputShaper.cpp
+    AudioOutputShaper.h
+    AudioRingBuffer.cpp
+    AudioRingBuffer.h
+    AudioSampleScheduler.cpp
+    AudioSampleScheduler.h
     Channels/DpcmChannel.cpp
     Channels/DpcmChannel.h
     Channels/PulseChannel.cpp

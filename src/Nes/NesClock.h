@@ -15,6 +15,8 @@ public:
         quint32 ppuTicksPerCpuCycle = 3;
         quint32 dotsPerScanline = 341;
         quint32 scanlinesPerFrame = 262;
+        quint64 cpuClockNumerator = 21477272;
+        quint64 cpuClockDenominator = 12;
 
         [[nodiscard]] constexpr quint64 ppuTicksPerFrame() const {
             return static_cast<quint64>(dotsPerScanline) * scanlinesPerFrame;

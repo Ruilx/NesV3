@@ -12,13 +12,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(BUILD_TESTS "Build core tests" ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets LinguistTools)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets LinguistTools)
+find_package(QT NAMES Qt6 REQUIRED COMPONENTS Widgets Multimedia LinguistTools)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia LinguistTools)
 
 set(TS_FILES i18n/NesV3_en_US.ts)
 
 set(PROJECT_SOURCES
 	    src/main.cpp
+		src/AudioOutputDevice.cpp
+		src/AudioOutputDevice.h
 		src/MainWindow.cpp
 		src/MainWindow.h
 		src/NesView.cpp
@@ -89,7 +91,10 @@ else()
 	qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 endif()
 
-target_link_libraries(NesV3 PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Nes)
+target_link_libraries(NesV3 PRIVATE
+	Qt${QT_VERSION_MAJOR}::Widgets
+	Qt${QT_VERSION_MAJOR}::Multimedia
+	Nes)
 
 set_target_properties(NesV3 PROPERTIES
 	MACOSX_BUNDLE_GUI_IDENTIFIER my.example.com

@@ -4,6 +4,8 @@
 #include "Controller.h"
 #include "Cpu.h"
 #include "Apu.h"
+#include "AudioOutputShaper.h"
+#include "AudioSampleScheduler.h"
 #include "Ppu.h"
 #include "NesClock.h"
 
@@ -29,6 +31,9 @@ public:
     [[nodiscard]] const NesClock &clock() const;
     void runMasterTicks(quint64 ticks);
     void runFrame();
+    void setAudioSampleCallback(AudioSampleScheduler::SampleCallback callback);
+    void resetAudioSampling();
+    [[nodiscard]] quint64 generatedAudioSampleCount() const;
 
 private:
     Cpu cpuComponent;
@@ -36,5 +41,8 @@ private:
     Controller controllerComponent;
     Cartridge cartridgeComponent;
     Apu apuComponent;
+    AudioOutputShaper audioOutputShaper;
+    AudioSampleScheduler audioSampleScheduler;
+    AudioSampleScheduler::SampleCallback audioSampleCallback;
     NesClock clockComponent;
 };

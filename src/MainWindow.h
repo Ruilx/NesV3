@@ -9,9 +9,12 @@
 #include <QTextStream>
 
 #include "Nes.h"
+#include "Nes/AudioRingBuffer.h"
 
+class AudioOutputDevice;
 class NesScene;
 class NesView;
+class QAudioSink;
 
 class MainWindow : public QMainWindow
 {
@@ -39,6 +42,11 @@ private:
 	void closePerformanceLog();
 	void resetPerformanceWindow();
 	void finishAutomatedRun();
+	void initializeAudioOutput();
+	void startAudioOutput();
+	void startAudioSinkIfReady();
+	void scheduleSimulationWakeup();
+	void stopAudioOutput();
 	[[nodiscard]] bool saveViewportScreenshot();
 	void runSimulationFrame();
 	void updateWindowTitle();
@@ -55,6 +63,12 @@ private:
 	QTimer screenshotTimer;
 	QFile performanceLogFile;
 	QTextStream performanceLogStream;
+	QElapsedTimer simulationPacingTimer;
+	AudioRingBuffer audioRingBuffer;
+	AudioOutputDevice *audioOutputDevice = nullptr;
+	QAudioSink *audioSink = nullptr;
+	bool audioOutputStarted = false;
+	quint64 simulationFrameNumber = 0;
 	quint64 performanceFrameCount = 0;
 	quint64 performanceCoreNanoseconds = 0;
 	quint64 performanceSceneNanoseconds = 0;

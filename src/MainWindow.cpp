@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include "AudioOutputDevice.h"
 #include "NesPalette.h"
 #include "NesNametableItem.h"
 #include "NesScene.h"
@@ -10,6 +11,7 @@
 #include "PatternTableDialog.h"
 
 #include <QAction>
+#include <QAudioSink>
 #include <QCoreApplication>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -20,11 +22,14 @@
 #include <QMessageBox>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMediaDevices>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStatusBar>
 
 namespace {
+constexpr quint32 AudioPrebufferSamples = 22050;
+
 NesPalette loadStoredPalette() {
     QSettings settings;
     QVector<QColor> colors;
@@ -73,9 +78,10 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent) {
     view->centerOn(this->scene->nesViewportRect().center());
     this->setCentralWidget(view);
     this->statusBar()->showMessage(tr("Performance: waiting for ROM"));
+    this->initializeAudioOutput();
     this->performanceTimer.start();
 
-        this->simulationTimer.setInterval(16);
+		this->simulationTimer.setSingleShot(true);
         this->simulationTimer.setTimerType(Qt::PreciseTimer);
         connect(
             &this->simulationTimer,
@@ -135,7 +141,94 @@ MainWindow::~MainWindow() {
     this->simulationTimer.stop();
     this->automatedRunStopTimer.stop();
     this->screenshotTimer.stop();
+    this->stopAudioOutput();
     closePerformanceLog();
+}
+
+void MainWindow::initializeAudioOutput() {
+    this->audioOutputDevice = new AudioOutputDevice(
+        this->audioRingBuffer, this);
+    const QAudioDevice outputDevice = QMediaDevices::defaultAudioOutput();
+    if (outputDevice.isNull()) {
+        qWarning() << "No default audio output device is available";
+        this->statusBar()->showMessage(tr("Audio: no output device"));
+        return;
+    }
+
+    QAudioFormat format;
+    format.setSampleRate(44100);
+    format.setChannelCount(1);
+    format.setSampleFormat(QAudioFormat::Int16);
+    if (!outputDevice.isFormatSupported(format)) {
+        qWarning() << "Default audio output does not support 44100 Hz mono PCM16";
+        this->statusBar()->showMessage(tr("Audio: format not supported"));
+        return;
+    }
+
+    this->audioSink = new QAudioSink(outputDevice, format, this);
+    connect(
+        this->audioSink,
+        &QAudioSink::stateChanged,
+        this,
+        [this](QAudio::State state) {
+            if (state == QAudio::StoppedState
+                && this->audioSink->error() != QAudio::NoError) {
+                qWarning() << "Audio output stopped with error:"
+                           << this->audioSink->error();
+            }
+        });
+    this->statusBar()->showMessage(tr("Audio: ready"));
+}
+
+void MainWindow::startAudioOutput() {
+    if (this->audioSink == nullptr || this->audioOutputDevice == nullptr) {
+        return;
+    }
+
+    this->audioRingBuffer.reset();
+    this->audioOutputDevice->resetReadStatistics();
+    this->nes.resetAudioSampling();
+    this->nes.setAudioSampleCallback(
+        [this](float sample) {
+            (void)this->audioRingBuffer.push(sample);
+        });
+    if (this->audioOutputDevice->isOpen()) {
+        this->audioOutputDevice->close();
+    }
+    if (!this->audioOutputDevice->open(QIODevice::ReadOnly)) {
+        qWarning() << "Unable to open audio output device"
+                   << this->audioOutputDevice->errorString();
+        this->nes.setAudioSampleCallback(AudioSampleScheduler::SampleCallback());
+        return;
+    }
+    this->audioOutputStarted = false;
+}
+
+void MainWindow::startAudioSinkIfReady() {
+    if (this->audioOutputStarted || this->audioSink == nullptr
+        || this->audioOutputDevice == nullptr) {
+        return;
+    }
+    if (this->audioRingBuffer.availableToRead() < AudioPrebufferSamples) {
+        return;
+    }
+
+    this->audioSink->start(this->audioOutputDevice);
+    this->audioOutputStarted = true;
+}
+
+void MainWindow::stopAudioOutput() {
+    this->nes.setAudioSampleCallback(AudioSampleScheduler::SampleCallback());
+    if (this->audioSink != nullptr) {
+        this->audioSink->stop();
+    }
+    this->audioOutputStarted = false;
+    if (this->audioOutputDevice != nullptr
+        && this->audioOutputDevice->isOpen()) {
+        this->audioOutputDevice->close();
+    }
+    this->audioRingBuffer.reset();
+    this->nes.resetAudioSampling();
 }
 
 bool MainWindow::loadRomFromPath(const QString &path, QString &error) {
@@ -145,6 +238,7 @@ bool MainWindow::loadRomFromPath(const QString &path, QString &error) {
     }
 
     this->simulationTimer.stop();
+    this->stopAudioOutput();
     closePerformanceLog();
     if (!this->nes.cartridge().loadFromFile(path, error)) {
         return false;
@@ -163,13 +257,18 @@ bool MainWindow::loadRomFromPath(const QString &path, QString &error) {
                     : Ppu::NametableMirroring::Horizontal));
     this->nes.cpu().reset();
     this->nes.ppu().reset();
+    this->nes.apu().reset();
     this->nes.clock().reset();
+    this->nes.resetAudioSampling();
     this->scene->invalidateTileCache();
     this->scene->updateFromPpu(this->nes.ppu());
     this->currentRomPath = path;
+    this->simulationPacingTimer.restart();
+    this->simulationFrameNumber = 0;
     openPerformanceLog(path);
     resetPerformanceWindow();
-    this->simulationTimer.start();
+    this->startAudioOutput();
+    this->scheduleSimulationWakeup();
     updateWindowTitle();
     this->view->setFocus(Qt::OtherFocusReason);
     qInfo() << "NesView focus restored after ROM load:" << this->view->hasFocus();
@@ -347,6 +446,7 @@ void MainWindow::finishAutomatedRun() {
         (void)this->saveViewportScreenshot();
     }
     this->simulationTimer.stop();
+    this->stopAudioOutput();
     this->automatedRunStopTimer.stop();
     this->automatedRunActive = false;
     closePerformanceLog();
@@ -358,12 +458,14 @@ void MainWindow::finishAutomatedRun() {
 
 void MainWindow::closeRom() {
     this->simulationTimer.stop();
+    this->stopAudioOutput();
     closePerformanceLog();
     this->nes.cartridge().unload();
     this->nes.cartridge().connect(
             this->nes.cpu().bus(), this->nes.ppu().bus());
     this->nes.cpu().reset();
     this->nes.ppu().reset();
+    this->nes.apu().reset();
     this->nes.clock().reset();
     this->scene->invalidateTileCache();
     this->currentRomPath.clear();
@@ -375,9 +477,20 @@ void MainWindow::runSimulationFrame() {
         return;
     }
 
+    const quint64 nextFrameNumber = this->simulationFrameNumber + 1;
+    const qint64 nextFrameDeadline = static_cast<qint64>(
+        nextFrameNumber * 1000000000ULL / 60);
+    if (this->simulationPacingTimer.nsecsElapsed() < nextFrameDeadline) {
+        this->scheduleSimulationWakeup();
+        return;
+    }
+
     this->frameTimer.start();
     this->nes.runFrame();
+    this->startAudioSinkIfReady();
     const quint64 coreNanoseconds = static_cast<quint64>(this->frameTimer.nsecsElapsed());
+    this->simulationFrameNumber = nextFrameNumber;
+    this->scheduleSimulationWakeup();
 
     this->frameTimer.start();
     this->scene->updateFromPpu(this->nes.ppu());
@@ -414,11 +527,22 @@ void MainWindow::runSimulationFrame() {
     const double viewPaintMs = viewPaintStats.nanoseconds / 1000000.0;
     const NesNametableItem::PositionStats positionStats =
         NesNametableItem::positionStats();
+    const quint32 audioBufferedSamples = this->audioRingBuffer.availableToRead();
+    const quint64 audioUnderrunSamples =
+        this->audioRingBuffer.underrunSampleCount();
+    const quint64 audioDroppedSamples =
+        this->audioRingBuffer.droppedSampleCount();
+    const quint64 audioReadCalls = this->audioOutputDevice == nullptr
+        ? 0
+        : this->audioOutputDevice->readCallCount();
+    const qint64 audioMaximumReadBytes = this->audioOutputDevice == nullptr
+        ? 0
+        : this->audioOutputDevice->maximumReadRequestBytes();
     const QString message = QStringLiteral(
         "fps=%1 core=%2ms scene=%3ms view=%4/%5ms tile=%6/%7ms "
         "rebuild=%8 dirty=%9 decoded=%10 updated=%11 "
         "pos=%12/%13 checks=%14 clock=%15/%16ms samples=%17/%18 "
-        "bus=%19/%20 miss=%21 apu=%22")
+        "bus=%19/%20 miss=%21 apu=%22 audio=%23/%24/%25/%26/%27")
         .arg(simulationFps, 0, 'f', 1)
         .arg(averageCoreMs, 0, 'f', 3)
         .arg(averageSceneMs, 0, 'f', 3)
@@ -440,7 +564,12 @@ void MainWindow::runSimulationFrame() {
         .arg(busStats.reads)
         .arg(busStats.writes)
         .arg(busStats.readCacheMisses + busStats.writeCacheMisses)
-        .arg(apuStats.clockCalls);
+        .arg(apuStats.clockCalls)
+        .arg(audioBufferedSamples)
+        .arg(audioUnderrunSamples)
+        .arg(audioDroppedSamples)
+        .arg(audioReadCalls)
+        .arg(audioMaximumReadBytes);
     this->statusBar()->showMessage(message);
     qInfo().noquote() << message;
     if (this->performanceLogFile.isOpen()) {
@@ -448,6 +577,22 @@ void MainWindow::runSimulationFrame() {
         this->performanceLogStream.flush();
     }
     this->resetPerformanceWindow();
+}
+
+void MainWindow::scheduleSimulationWakeup() {
+    if (this->currentRomPath.isEmpty() || !this->nes.cartridge().isLoaded()) {
+        return;
+    }
+
+    const quint64 nextFrameNumber = this->simulationFrameNumber + 1;
+    const qint64 nextFrameDeadline = static_cast<qint64>(
+        nextFrameNumber * 1000000000ULL / 60);
+    const qint64 remainingNanoseconds = nextFrameDeadline
+        - this->simulationPacingTimer.nsecsElapsed();
+    const int delayMilliseconds = remainingNanoseconds <= 0
+        ? 1
+        : static_cast<int>((remainingNanoseconds + 999999) / 1000000);
+    this->simulationTimer.start(delayMilliseconds);
 }
 
 void MainWindow::updateWindowTitle() {
