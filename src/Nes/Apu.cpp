@@ -1,7 +1,24 @@
 #include "Apu.h"
+#include "PulseChannel.h"
 
 Apu::Apu() {
     this->reset();
+    this->registerChannel(
+        std::make_unique<PulseChannel>(),
+        ApuChannelRegistry::ChannelDescriptor{
+            .id = QStringLiteral("pulse1"),
+            .registerStart = 0x00,
+            .registerEnd = 0x03,
+            .statusMask = 0x01,
+        });
+    this->registerChannel(
+        std::make_unique<PulseChannel>(),
+        ApuChannelRegistry::ChannelDescriptor{
+            .id = QStringLiteral("pulse2"),
+            .registerStart = 0x04,
+            .registerEnd = 0x07,
+            .statusMask = 0x02,
+        });
 }
 
 bool Apu::read(quint16 address, quint8 &value) {

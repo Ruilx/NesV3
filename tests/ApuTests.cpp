@@ -1,4 +1,5 @@
 #include "Nes.h"
+#include "PulseChannel.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -161,19 +162,19 @@ void testRegisteredChannelLifecycle() {
         std::move(channel),
         ApuChannelRegistry::ChannelDescriptor{
             .id = QStringLiteral("dummy"),
-            .registerStart = 0x00,
-            .registerEnd = 0x03,
-            .statusMask = 0x01,
+            .registerStart = 0x08,
+            .registerEnd = 0x0B,
+            .statusMask = 0x04,
         });
 
     check(handle != 0, "registered channel should receive a handle");
-    check(apu.write(0x02, 0xA5), "registered channel write should be handled");
+    check(apu.write(0x0A, 0xA5), "registered channel write should be handled");
     check(channelPointer->lastOffset == 2 && channelPointer->lastValue == 0xA5,
         "registered channel should receive translated register writes");
 
-    apu.write(0x15, 0x01);
+    apu.write(0x15, 0x04);
     check(channelPointer->isEnabled(), "$4015 should enable registered channels");
-    check((apu.status().channelEnable & 0x01) != 0,
+    check((apu.status().channelEnable & 0x04) != 0,
         "$4015 status should include registered channel state");
 
     apu.clock();
@@ -189,6 +190,42 @@ void testRegisteredChannelLifecycle() {
     check(apu.unregisterChannel(handle), "registered channel should be removable");
     check(!apu.unregisterChannel(handle), "removing a channel twice should fail");
 }
+
+void testPulseChannelWaveform() {
+    PulseChannel pulse;
+    pulse.setEnabled(true);
+    check(pulse.writeRegister(0, 0x9F), "pulse control register should be accepted");
+    check(pulse.writeRegister(2, 0x08), "pulse timer low register should be accepted");
+    check(pulse.writeRegister(3, 0x08), "pulse timer high register should be accepted");
+    check(pulse.duty() == 2 && pulse.timerPeriod() == 8,
+        "pulse should decode duty and 11-bit timer period");
+    check(pulse.lengthCounter() == 254,
+        "pulse high register should load the length counter");
+    check(pulse.sample() == 0.0F,
+        "pulse duty sequence should start at its first low phase");
+
+    pulse.clockCpuCycle();
+    check(pulse.sample() > 0.9F,
+        "pulse timer should advance to the next duty phase");
+
+    pulse.onHalfFrame();
+    check(pulse.lengthCounter() == 253,
+        "pulse length counter should decrement on half frame");
+    pulse.setEnabled(false);
+    check(!pulse.isActive() && pulse.lengthCounter() == 0,
+        "disabling pulse should clear its length counter");
+}
+
+void testApuBuiltInPulseChannels() {
+    Apu apu;
+    apu.write(0x00, 0xDF);
+    apu.write(0x02, 0x08);
+    apu.write(0x03, 0x08);
+    apu.write(0x15, 0x01);
+    check((apu.status().channelEnable & 0x01) != 0,
+        "APU should expose the built-in first pulse status bit");
+    check(apu.write(0x04, 0xDF), "APU should route the second pulse registers");
+}
 }
 
 int main() {
@@ -196,6 +233,8 @@ int main() {
     testFourStepFrameCounterEvents();
     testFiveStepFrameCounterEvents();
     testRegisteredChannelLifecycle();
+    testPulseChannelWaveform();
+    testApuBuiltInPulseChannels();
     std::cout << "ApuTests passed\n";
     return EXIT_SUCCESS;
 }
