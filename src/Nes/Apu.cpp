@@ -46,14 +46,37 @@ bool Apu::write(quint16 address, quint8 value) {
 void Apu::clock() {
     ++this->statistics.clockCalls;
     ++this->frameCounterCycles;
-    if (this->frameCounterCycles < FrameCounterPeriod) {
-        return;
-    }
-
-    this->frameCounterCycles = 0;
-    if (!this->frameCounterMode5 && !this->frameIrqInhibit) {
-        this->frameIrq = true;
-        this->updateIrqLine();
+    switch (this->frameCounterCycles) {
+    case 3729:
+        this->emitFrameCounterEvent(FrameCounterEvent::QuarterFrame);
+        break;
+    case 7457:
+        this->emitFrameCounterEvent(FrameCounterEvent::QuarterFrame);
+        this->emitFrameCounterEvent(FrameCounterEvent::HalfFrame);
+        break;
+    case 11186:
+        this->emitFrameCounterEvent(FrameCounterEvent::QuarterFrame);
+        break;
+    case 14915:
+        this->emitFrameCounterEvent(FrameCounterEvent::QuarterFrame);
+        this->emitFrameCounterEvent(FrameCounterEvent::HalfFrame);
+        if (!this->frameCounterMode5 && !this->frameIrqInhibit) {
+            this->frameIrq = true;
+            this->emitFrameCounterEvent(FrameCounterEvent::FrameIrq);
+            this->updateIrqLine();
+        }
+        if (!this->frameCounterMode5) {
+            this->frameCounterCycles = 0;
+        }
+        break;
+    case 18641:
+        if (this->frameCounterMode5) {
+            this->emitFrameCounterEvent(FrameCounterEvent::QuarterFrame);
+            this->frameCounterCycles = 0;
+        }
+        break;
+    default:
+        break;
     }
 }
 
@@ -75,6 +98,10 @@ void Apu::reset() {
 void Apu::setIrqCallback(IrqCallback callback) {
     this->irqCallback = std::move(callback);
     this->updateIrqLine();
+}
+
+void Apu::setFrameCounterCallback(FrameCounterCallback callback) {
+    this->frameCounterCallback = std::move(callback);
 }
 
 Apu::Status Apu::status() const {
@@ -104,6 +131,12 @@ void Apu::writeFrameCounter(quint8 value) {
     }
     this->frameCounterCycles = 0;
     this->updateIrqLine();
+}
+
+void Apu::emitFrameCounterEvent(FrameCounterEvent event) {
+    if (this->frameCounterCallback) {
+        this->frameCounterCallback(event);
+    }
 }
 
 void Apu::updateIrqLine() {

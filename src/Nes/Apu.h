@@ -8,6 +8,14 @@ class Apu final : public BusDevice {
 public:
     using IrqCallback = std::function<void(bool)>;
 
+    enum class FrameCounterEvent {
+        QuarterFrame,
+        HalfFrame,
+        FrameIrq,
+    };
+
+    using FrameCounterCallback = std::function<void(FrameCounterEvent)>;
+
     struct Status {
         quint8 channelEnable = 0;
         bool frameIrq = false;
@@ -29,12 +37,14 @@ public:
     void clock();
     void reset();
     void setIrqCallback(IrqCallback callback);
+    void setFrameCounterCallback(FrameCounterCallback callback);
     [[nodiscard]] Status status() const;
     [[nodiscard]] quint8 registerValue(quint8 index) const;
     [[nodiscard]] Stats takeStats();
 
 private:
-    static constexpr quint64 FrameCounterPeriod = 14915;
+    static constexpr quint64 FourStepPeriod = 14915;
+    static constexpr quint64 FiveStepPeriod = 18641;
 
     quint8 registers[0x16] = {};
     quint8 channelEnable = 0;
@@ -44,9 +54,11 @@ private:
     bool frameIrqInhibit = false;
     quint64 frameCounterCycles = 0;
     IrqCallback irqCallback;
+    FrameCounterCallback frameCounterCallback;
     Stats statistics;
     bool irqLinePending = false;
 
     void writeFrameCounter(quint8 value);
+    void emitFrameCounterEvent(FrameCounterEvent event);
     void updateIrqLine();
 };
