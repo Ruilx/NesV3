@@ -13,6 +13,8 @@ add_library(Nes STATIC
     PulseChannel.h
     TriangleChannel.cpp
     TriangleChannel.h
+    NoiseChannel.cpp
+    NoiseChannel.h
     Cartridge.cpp
     Cartridge.h
     Controller.cpp

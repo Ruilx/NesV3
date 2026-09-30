@@ -1,4 +1,5 @@
 #include "Apu.h"
+#include "NoiseChannel.h"
 #include "PulseChannel.h"
 #include "TriangleChannel.h"
 
@@ -27,6 +28,14 @@ Apu::Apu() {
             .registerStart = 0x08,
             .registerEnd = 0x0B,
             .statusMask = 0x04,
+        });
+    this->registerChannel(
+        std::make_unique<NoiseChannel>(),
+        ApuChannelRegistry::ChannelDescriptor{
+            .id = QStringLiteral("noise"),
+            .registerStart = 0x0C,
+            .registerEnd = 0x0F,
+            .statusMask = 0x08,
         });
 }
 

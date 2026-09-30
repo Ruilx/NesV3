@@ -1,4 +1,5 @@
 #include "Nes.h"
+#include "NoiseChannel.h"
 #include "PulseChannel.h"
 #include "TriangleChannel.h"
 
@@ -326,6 +327,56 @@ void testApuBuiltInTriangleChannel() {
     check((apu.status().channelEnable & 0x04) != 0,
         "APU should expose the built-in triangle status bit");
 }
+
+void testNoiseChannel() {
+    NoiseChannel noise;
+    noise.setEnabled(true);
+    noise.writeRegister(0, 0x03);
+    noise.writeRegister(2, 0x8F);
+    noise.writeRegister(3, 0x08);
+    check(noise.timerPeriod() == 4068 && noise.mode(),
+        "noise should decode mode and period fields");
+    check(noise.lengthCounter() == 254,
+        "noise should decode its length counter index");
+    check(noise.shiftRegister() == 1,
+        "noise should reset its LFSR to one");
+
+    noise.onQuarterFrame();
+    check(noise.envelopeVolume() == 15 && noise.envelopeDivider() == 3,
+        "noise quarter frame should start its envelope");
+    for (int cycle = 0; cycle < 4069; ++cycle) {
+        noise.clockCpuCycle();
+    }
+    check(noise.shiftRegister() != 1,
+        "noise timer should advance its LFSR");
+    check(noise.sample() >= 0.0F && noise.sample() <= 1.0F,
+        "noise sample should remain normalized");
+    noise.writeRegister(0, 0x1F);
+    check(noise.sample() == 1.0F || noise.sample() == 0.0F,
+        "noise constant volume should use the register volume when audible");
+
+    noise.writeRegister(0, 0x23);
+    noise.onHalfFrame();
+    check(noise.lengthCounter() == 254,
+        "noise loop flag should halt the length counter");
+    noise.writeRegister(0, 0x03);
+    noise.onHalfFrame();
+    check(noise.lengthCounter() == 253,
+        "noise length counter should decrement when loop is clear");
+    noise.setEnabled(false);
+    check(!noise.isActive() && noise.lengthCounter() == 0,
+        "disabling noise should clear its length counter");
+}
+
+void testApuBuiltInNoiseChannel() {
+    Apu apu;
+    apu.write(0x0C, 0x03);
+    apu.write(0x0E, 0x00);
+    apu.write(0x0F, 0x08);
+    apu.write(0x15, 0x08);
+    check((apu.status().channelEnable & 0x08) != 0,
+        "APU should expose the built-in noise status bit");
+}
 }
 
 int main() {
@@ -338,6 +389,8 @@ int main() {
     testPulseSweep();
     testTriangleChannel();
     testApuBuiltInTriangleChannel();
+    testNoiseChannel();
+    testApuBuiltInNoiseChannel();
     std::cout << "ApuTests passed\n";
     return EXIT_SUCCESS;
 }
