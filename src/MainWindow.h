@@ -20,6 +20,8 @@ class MainWindow : public QMainWindow
 public:
 	MainWindow(QWidget *parent = nullptr);
 	~MainWindow() override;
+	bool loadRomFromPath(const QString &path, QString *errorMessage = nullptr);
+	bool startBenchmark(const QStringList &romPaths, int perRomMilliseconds);
 
 private:
 	void savePalette();
@@ -27,6 +29,7 @@ private:
 	void openPatternTableDialog();
 	void openRom();
 	void closeRom();
+	void runNextBenchmarkRom();
 	void openPerformanceLog(const QString &romPath);
 	void closePerformanceLog();
 	void runSimulationFrame();
@@ -48,5 +51,9 @@ private:
 	quint64 performanceUpdatedTiles = 0;
 	quint64 performanceNametableSetPos = 0;
 	QString currentRomPath;
+	QStringList benchmarkRomPaths;
+	int benchmarkRomIndex = 0;
+	int benchmarkPerRomMilliseconds = 0;
+	QElapsedTimer benchmarkRomTimer;
 };
 #endif // MAINWINDOW_H

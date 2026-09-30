@@ -10,6 +10,7 @@
 #include "PatternTableDialog.h"
 
 #include <QAction>
+#include <QCoreApplication>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QDir>
@@ -203,9 +204,28 @@ void MainWindow::openRom() {
     }
 
     QString error;
-    if (!this->nes.cartridge().loadFromFile(path, error)) {
+    if (!loadRomFromPath(path, &error)) {
         QMessageBox::critical(this, tr("Open ROM failed"), error);
         return;
+    }
+}
+
+bool MainWindow::loadRomFromPath(const QString &path, QString *errorMessage) {
+    if (path.isEmpty()) {
+        return false;
+    }
+
+    if (!this->currentRomPath.isEmpty()) {
+        closeRom();
+    }
+
+    QString error;
+    if (!this->nes.cartridge().loadFromFile(path, error)) {
+        if (errorMessage != nullptr) {
+            *errorMessage = error;
+        }
+        qWarning() << "Unable to load ROM:" << path << error;
+        return false;
     }
 
     qInfo() << QString("Loaded ROM: %1, mapper %2").arg(QFileInfo(path).fileName()).arg(this->nes.cartridge().header().mapperNumber);
@@ -231,6 +251,50 @@ void MainWindow::openRom() {
         view->setFocus(Qt::OtherFocusReason);
         qInfo() << "NesView focus restored after ROM load:" << view->hasFocus();
     }
+    return true;
+}
+
+bool MainWindow::startBenchmark(
+    const QStringList &romPaths, int perRomMilliseconds) {
+    if (romPaths.size() != 2 || perRomMilliseconds <= 0) {
+        return false;
+    }
+
+    this->benchmarkRomPaths = romPaths;
+    this->benchmarkRomIndex = 0;
+    this->benchmarkPerRomMilliseconds = perRomMilliseconds;
+    QTimer::singleShot(0, this, &MainWindow::runNextBenchmarkRom);
+    return true;
+}
+
+void MainWindow::runNextBenchmarkRom() {
+    if (this->benchmarkRomIndex >= this->benchmarkRomPaths.size()) {
+        closeRom();
+        qInfo() << "Benchmark completed";
+        QCoreApplication::exit(0);
+        return;
+    }
+
+    const QString path = this->benchmarkRomPaths.at(this->benchmarkRomIndex);
+    if (!loadRomFromPath(path)) {
+        closeRom();
+        qWarning() << "Benchmark failed while loading ROM:" << path;
+        QCoreApplication::exit(2);
+        return;
+    }
+
+    ++this->benchmarkRomIndex;
+    this->benchmarkRomTimer.restart();
+    qInfo() << "Benchmark started:" << path
+            << "durationMs=" << this->benchmarkPerRomMilliseconds;
+    QTimer::singleShot(this->benchmarkPerRomMilliseconds, this, [this]() {
+        const QString finishedPath = this->currentRomPath;
+        const qint64 elapsedMilliseconds = this->benchmarkRomTimer.elapsed();
+        closeRom();
+        qInfo() << "Benchmark finished:" << finishedPath
+                << "elapsedMs=" << elapsedMilliseconds;
+        QTimer::singleShot(0, this, &MainWindow::runNextBenchmarkRom);
+    });
 }
 
 void MainWindow::closeRom() {
