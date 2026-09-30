@@ -10,6 +10,7 @@
 #include "PatternTableDialog.h"
 
 #include <QAction>
+#include <QCoreApplication>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QDir>
@@ -81,6 +82,16 @@ MainWindow::MainWindow(QWidget *parent): QMainWindow(parent) {
             &QTimer::timeout,
             this,
             &MainWindow::runSimulationFrame);
+    connect(
+        &this->automatedRunStopTimer,
+        &QTimer::timeout,
+        this,
+        &MainWindow::finishAutomatedRun);
+    connect(
+        &this->screenshotTimer,
+        &QTimer::timeout,
+        this,
+        &MainWindow::saveViewportScreenshot);
 
     auto *fileMenu = menuBar()->addMenu(tr("File"));
     auto *openRomAction = fileMenu->addAction(tr("Open ROM"));
@@ -122,7 +133,86 @@ void MainWindow::setDebugInputMode(bool enabled) {
 
 MainWindow::~MainWindow() {
     this->simulationTimer.stop();
+    this->automatedRunStopTimer.stop();
+    this->screenshotTimer.stop();
     closePerformanceLog();
+}
+
+bool MainWindow::loadRomFromPath(const QString &path, QString &error) {
+    if (path.isEmpty()) {
+        error = QStringLiteral("ROM path is empty");
+        return false;
+    }
+
+    this->simulationTimer.stop();
+    closePerformanceLog();
+    if (!this->nes.cartridge().loadFromFile(path, error)) {
+        return false;
+    }
+
+    qInfo() << QString("Loaded ROM: %1, mapper %2")
+                   .arg(QFileInfo(path).fileName())
+                   .arg(this->nes.cartridge().header().mapperNumber);
+    this->nes.cartridge().connect(
+            this->nes.cpu().bus(), this->nes.ppu().bus());
+    this->nes.ppu().setNametableMirroring(
+            this->nes.cartridge().header().fourScreenMirroring
+                ? Ppu::NametableMirroring::FourScreen
+                : (this->nes.cartridge().header().verticalMirroring
+                    ? Ppu::NametableMirroring::Vertical
+                    : Ppu::NametableMirroring::Horizontal));
+    this->nes.cpu().reset();
+    this->nes.ppu().reset();
+    this->nes.clock().reset();
+    this->scene->invalidateTileCache();
+    this->scene->updateFromPpu(this->nes.ppu());
+    this->currentRomPath = path;
+    openPerformanceLog(path);
+    resetPerformanceWindow();
+    this->simulationTimer.start();
+    updateWindowTitle();
+    this->view->setFocus(Qt::OtherFocusReason);
+    qInfo() << "NesView focus restored after ROM load:" << this->view->hasFocus();
+    return true;
+}
+
+bool MainWindow::startAutomatedRun(
+        int durationMilliseconds,
+        const QString &screenshotDirectory,
+        int screenshotIntervalMilliseconds,
+        bool screenshotOnExit,
+        QString &error) {
+    if (durationMilliseconds <= 0) {
+        error = QStringLiteral("Run duration must be positive");
+        return false;
+    }
+    if (screenshotDirectory.isEmpty()
+            && (screenshotIntervalMilliseconds > 0 || screenshotOnExit)) {
+        error = QStringLiteral("Screenshot options require a directory");
+        return false;
+    }
+    if (screenshotIntervalMilliseconds < 0) {
+        error = QStringLiteral("Screenshot interval must not be negative");
+        return false;
+    }
+    if (!screenshotDirectory.isEmpty()
+            && !QDir().mkpath(screenshotDirectory)) {
+        error = QStringLiteral("Unable to create screenshot directory: %1")
+                    .arg(screenshotDirectory);
+        return false;
+    }
+
+    this->screenshotDirectory = screenshotDirectory;
+    this->screenshotSequence = 0;
+    this->screenshotOnExit = screenshotOnExit;
+    this->automatedRunActive = true;
+    this->automatedRunTimer.restart();
+    this->automatedRunStopTimer.start(durationMilliseconds);
+    if (screenshotIntervalMilliseconds > 0) {
+        this->screenshotTimer.start(screenshotIntervalMilliseconds);
+    }
+    qInfo() << "Automated run started: durationMs=" << durationMilliseconds;
+    return true;
 }
 
 void MainWindow::openPerformanceLog(const QString &romPath) {
@@ -220,35 +310,50 @@ void MainWindow::openRom() {
     }
 
     QString error;
-    if (!this->nes.cartridge().loadFromFile(path, error)) {
+    if (!this->loadRomFromPath(path, error)) {
         QMessageBox::critical(this, tr("Open ROM failed"), error);
         return;
     }
+}
 
-    qInfo() << QString("Loaded ROM: %1, mapper %2").arg(QFileInfo(path).fileName()).arg(this->nes.cartridge().header().mapperNumber);
-
-    this->nes.cartridge().connect(
-            this->nes.cpu().bus(), this->nes.ppu().bus());
-    this->nes.ppu().setNametableMirroring(
-            this->nes.cartridge().header().fourScreenMirroring
-                ? Ppu::NametableMirroring::FourScreen
-                : (this->nes.cartridge().header().verticalMirroring
-                    ? Ppu::NametableMirroring::Vertical
-                    : Ppu::NametableMirroring::Horizontal));
-    this->nes.cpu().reset();
-    this->nes.ppu().reset();
-    this->nes.clock().reset();
-    this->scene->invalidateTileCache();
-    this->scene->updateFromPpu(this->nes.ppu());
-    this->currentRomPath = path;
-    openPerformanceLog(path);
-    resetPerformanceWindow();
-    this->simulationTimer.start();
-    updateWindowTitle();
-    if (auto *view = qobject_cast<NesView *>(this->centralWidget())) {
-        view->setFocus(Qt::OtherFocusReason);
-        qInfo() << "NesView focus restored after ROM load:" << view->hasFocus();
+bool MainWindow::saveViewportScreenshot() {
+    if (!this->automatedRunActive || this->screenshotDirectory.isEmpty()
+            || this->view == nullptr) {
+        return false;
     }
+
+    const QString romName = QFileInfo(this->currentRomPath).completeBaseName();
+    const QString fileName = QStringLiteral("%1-%2ms-%3.png")
+        .arg(romName)
+        .arg(this->automatedRunTimer.elapsed(), 8, 10, QLatin1Char('0'))
+        .arg(this->screenshotSequence++, 4, 10, QLatin1Char('0'));
+    const QString path = QDir(this->screenshotDirectory).filePath(fileName);
+    const bool saved = this->view->viewport()->grab().save(path, "PNG");
+    if (!saved) {
+        qWarning() << "Unable to save screenshot:" << path;
+    } else {
+        qInfo() << "Screenshot:" << path;
+    }
+    return saved;
+}
+
+void MainWindow::finishAutomatedRun() {
+    if (!this->automatedRunActive) {
+        return;
+    }
+
+    this->screenshotTimer.stop();
+    if (this->screenshotOnExit) {
+        (void)this->saveViewportScreenshot();
+    }
+    this->simulationTimer.stop();
+    this->automatedRunStopTimer.stop();
+    this->automatedRunActive = false;
+    closePerformanceLog();
+    qInfo() << "Automated run finished after ms="
+            << this->automatedRunTimer.elapsed();
+    this->close();
+    QCoreApplication::exit(0);
 }
 
 void MainWindow::closeRom() {

@@ -21,6 +21,14 @@ public:
 	MainWindow(QWidget *parent = nullptr);
 	~MainWindow() override;
 
+	[[nodiscard]] bool loadRomFromPath(const QString &path, QString &error);
+	[[nodiscard]] bool startAutomatedRun(
+		int durationMilliseconds,
+		const QString &screenshotDirectory,
+		int screenshotIntervalMilliseconds,
+		bool screenshotOnExit,
+		QString &error);
+
 private:
 	void savePalette();
 	void openPaletteEditor();
@@ -30,6 +38,8 @@ private:
 	void openPerformanceLog(const QString &romPath);
 	void closePerformanceLog();
 	void resetPerformanceWindow();
+	void finishAutomatedRun();
+	[[nodiscard]] bool saveViewportScreenshot();
 	void runSimulationFrame();
 	void updateWindowTitle();
 	void setDebugInputMode(bool enabled);
@@ -40,6 +50,9 @@ private:
 	QTimer simulationTimer;
 	QElapsedTimer performanceTimer;
 	QElapsedTimer frameTimer;
+	QElapsedTimer automatedRunTimer;
+	QTimer automatedRunStopTimer;
+	QTimer screenshotTimer;
 	QFile performanceLogFile;
 	QTextStream performanceLogStream;
 	quint64 performanceFrameCount = 0;
@@ -50,5 +63,9 @@ private:
 	quint64 performanceUpdatedTiles = 0;
 	quint64 performanceNametableSetPos = 0;
 	QString currentRomPath;
+	QString screenshotDirectory;
+	int screenshotSequence = 0;
+	bool screenshotOnExit = false;
+	bool automatedRunActive = false;
 };
 #endif // MAINWINDOW_H
