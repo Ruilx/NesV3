@@ -4,7 +4,7 @@
 Apu::Apu() {
     this->reset();
     this->registerChannel(
-        std::make_unique<PulseChannel>(),
+        std::make_unique<PulseChannel>(true),
         ApuChannelRegistry::ChannelDescriptor{
             .id = QStringLiteral("pulse1"),
             .registerStart = 0x00,
@@ -12,7 +12,7 @@ Apu::Apu() {
             .statusMask = 0x01,
         });
     this->registerChannel(
-        std::make_unique<PulseChannel>(),
+        std::make_unique<PulseChannel>(false),
         ApuChannelRegistry::ChannelDescriptor{
             .id = QStringLiteral("pulse2"),
             .registerStart = 0x04,

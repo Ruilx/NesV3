@@ -3,18 +3,23 @@
 constexpr quint8 PulseChannel::LengthTable[32];
 constexpr quint8 PulseChannel::DutySequences[4][8];
 
+PulseChannel::PulseChannel(bool channel1) : channel1(channel1) {
+}
+
 void PulseChannel::reset() {
     this->control = 0;
     this->sweep = 0;
     this->timerLow = 0;
     this->timerHigh = 0;
     this->lengthIndex = 0;
+    this->sweepDividerValue = 0;
     this->timer = 0;
     this->sequenceIndex = 0;
     this->length = 0;
     this->envelopeDivider = 0;
     this->envelopeDecay = 0;
     this->envelopeStart = false;
+    this->sweepReload = false;
     this->timerPhase = false;
     this->enabled = false;
 }
@@ -39,6 +44,7 @@ void PulseChannel::onQuarterFrame() {
 
 void PulseChannel::onHalfFrame() {
     this->clockLengthCounter();
+    this->clockSweep();
 }
 
 bool PulseChannel::writeRegister(quint16 offset, quint8 value) {
@@ -49,6 +55,7 @@ bool PulseChannel::writeRegister(quint16 offset, quint8 value) {
         return true;
     case 1:
         this->sweep = value;
+        this->sweepReload = true;
         return true;
     case 2:
         this->timerLow = value;
@@ -66,7 +73,7 @@ bool PulseChannel::writeRegister(quint16 offset, quint8 value) {
 }
 
 float PulseChannel::sample() const {
-    if (!this->isActive() || this->timerPeriod() < 8
+    if (!this->isActive() || this->sweepMutes()
         || DutySequences[(this->control >> 6) & 0x03][this->sequenceIndex] == 0) {
         return 0.0F;
     }
@@ -106,6 +113,26 @@ quint8 PulseChannel::envelopeVolume() const {
         : this->envelopeDecay;
 }
 
+quint16 PulseChannel::sweepTargetPeriod() const {
+    const quint16 period = this->timerPeriod();
+    const quint16 change = static_cast<quint16>(period >> (this->sweep & 0x07));
+    if ((this->sweep & 0x08) != 0) {
+        const int target = static_cast<int>(period) - static_cast<int>(change)
+            - (this->channel1 ? 1 : 0);
+        return target < 0 ? 0 : static_cast<quint16>(target);
+    }
+    return static_cast<quint16>(period + change);
+}
+
+quint8 PulseChannel::sweepDivider() const {
+    return this->sweepDividerValue;
+}
+
+bool PulseChannel::sweepMutes() const {
+    return this->timerPeriod() < 8
+        || ((this->sweep & 0x08) == 0 && this->sweepTargetPeriod() > 0x07FF);
+}
+
 void PulseChannel::reloadEnvelope() {
     this->envelopeStart = true;
 }
@@ -140,5 +167,28 @@ void PulseChannel::clockEnvelope() {
 void PulseChannel::clockLengthCounter() {
     if ((this->control & 0x20) == 0 && this->length > 0) {
         --this->length;
+    }
+}
+
+void PulseChannel::clockSweep() {
+    const quint8 period = static_cast<quint8>(((this->sweep >> 4) & 0x07) + 1);
+    if (this->sweepReload) {
+        this->sweepDividerValue = period;
+        this->sweepReload = false;
+        return;
+    }
+
+    if (this->sweepDividerValue == 0) {
+        if ((this->sweep & 0x80) != 0 && (this->sweep & 0x07) != 0
+            && !this->sweepMutes()) {
+            const quint16 target = this->sweepTargetPeriod();
+            if (target <= 0x07FF) {
+                this->timerLow = static_cast<quint8>(target & 0xFF);
+                this->timerHigh = static_cast<quint8>(target >> 8);
+            }
+        }
+        this->sweepDividerValue = period;
+    } else {
+        --this->sweepDividerValue;
     }
 }

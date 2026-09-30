@@ -226,6 +226,59 @@ void testApuBuiltInPulseChannels() {
         "APU should expose the built-in first pulse status bit");
     check(apu.write(0x04, 0xDF), "APU should route the second pulse registers");
 }
+
+void testPulseSweep() {
+    PulseChannel pulse1(true);
+    pulse1.setEnabled(true);
+    pulse1.writeRegister(0, 0x90);
+    pulse1.writeRegister(2, 0x00);
+    pulse1.writeRegister(3, 0x01);
+    pulse1.writeRegister(1, 0x91);
+    check(pulse1.sweepTargetPeriod() == 0x0180,
+        "positive sweep should add the shifted timer period");
+    check(pulse1.sweepDivider() == 0,
+        "writing sweep should wait for the first half frame");
+
+    pulse1.onHalfFrame();
+    check(pulse1.sweepDivider() == 2 && pulse1.timerPeriod() == 0x0100,
+        "first half frame should reload the sweep divider without updating");
+    pulse1.onHalfFrame();
+    pulse1.onHalfFrame();
+    pulse1.onHalfFrame();
+    check(pulse1.timerPeriod() == 0x0180,
+        "sweep should update the timer when its divider expires");
+
+    PulseChannel pulse2(false);
+    pulse2.setEnabled(true);
+    pulse2.writeRegister(0, 0x90);
+    pulse2.writeRegister(2, 0x00);
+    pulse2.writeRegister(3, 0x01);
+    pulse2.writeRegister(1, 0x99);
+    pulse1.writeRegister(2, 0x00);
+    pulse1.writeRegister(3, 0x01);
+    pulse1.writeRegister(1, 0x99);
+    pulse1.onHalfFrame();
+    pulse2.onHalfFrame();
+    pulse1.onHalfFrame();
+    pulse2.onHalfFrame();
+    pulse1.onHalfFrame();
+    pulse2.onHalfFrame();
+    pulse1.onHalfFrame();
+    pulse2.onHalfFrame();
+    check(pulse1.timerPeriod() == 0x007F && pulse2.timerPeriod() == 0x0080,
+        "pulse 1 negative sweep should subtract one extra from pulse 2");
+
+    PulseChannel muted;
+    muted.setEnabled(true);
+    muted.writeRegister(0, 0x90);
+    muted.writeRegister(2, 0x07);
+    muted.writeRegister(3, 0x00);
+    check(muted.sweepMutes(), "pulse periods below eight should be muted");
+    muted.writeRegister(2, 0xFF);
+    muted.writeRegister(3, 0x07);
+    muted.writeRegister(1, 0x80);
+    check(muted.sweepMutes(), "positive sweep targets above 0x7ff should mute");
+}
 }
 
 int main() {
@@ -235,6 +288,7 @@ int main() {
     testRegisteredChannelLifecycle();
     testPulseChannelWaveform();
     testApuBuiltInPulseChannels();
+    testPulseSweep();
     std::cout << "ApuTests passed\n";
     return EXIT_SUCCESS;
 }

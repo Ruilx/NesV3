@@ -4,7 +4,7 @@
 
 class PulseChannel final : public ApuChannel {
 public:
-    PulseChannel() = default;
+    explicit PulseChannel(bool channel1 = false);
 
     void reset() override;
     void clockCpuCycle() override;
@@ -20,6 +20,9 @@ public:
     [[nodiscard]] quint16 timerPeriod() const;
     [[nodiscard]] quint8 lengthCounter() const;
     [[nodiscard]] quint8 envelopeVolume() const;
+    [[nodiscard]] quint16 sweepTargetPeriod() const;
+    [[nodiscard]] quint8 sweepDivider() const;
+    [[nodiscard]] bool sweepMutes() const;
 
 private:
     static constexpr quint8 LengthTable[32] = {
@@ -40,17 +43,21 @@ private:
     quint8 timerLow = 0;
     quint8 timerHigh = 0;
     quint8 lengthIndex = 0;
+    quint8 sweepDividerValue = 0;
     quint16 timer = 0;
     quint8 sequenceIndex = 0;
     quint8 length = 0;
     quint8 envelopeDivider = 0;
     quint8 envelopeDecay = 0;
     bool envelopeStart = false;
+    bool sweepReload = false;
     bool timerPhase = false;
     bool enabled = false;
+    bool channel1 = false;
 
     void reloadEnvelope();
     void reloadLengthCounter();
     void clockEnvelope();
     void clockLengthCounter();
+    void clockSweep();
 };
