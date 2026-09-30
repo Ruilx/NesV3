@@ -23,7 +23,6 @@ public:
         quint64 decodedTiles = 0;
         quint64 updatedTiles = 0;
         quint64 nametableSetPosCalls = 0;
-        quint64 elapsedNanoseconds = 0;
     };
     static constexpr int TileSize = 8;
     static constexpr int TilesWide = 32;

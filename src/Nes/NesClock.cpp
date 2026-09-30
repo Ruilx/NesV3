@@ -1,10 +1,8 @@
 #include "NesClock.h"
 
-#include <chrono>
+#include "../NesPerformanceConfig.h"
 
-namespace {
-constexpr bool EnableClockTimingSampling = true;
-}
+#include <chrono>
 
 NesClock::NesClock(TickCallback cpuTick, TickCallback ppuTick)
     : NesClock(std::move(cpuTick), std::move(ppuTick), TimingProfile()) {
@@ -27,14 +25,14 @@ void NesClock::tick() {
             ++this->cpuCallbackCount;
             bool sample = false;
             std::chrono::steady_clock::time_point start;
-            if constexpr (EnableClockTimingSampling) {
+            if constexpr (NesPerformanceConfig::EnableClockTimingSampling) {
                 sample = (this->cpuCallbackCount & 0xFF) == 0;
                 if (sample) {
                     start = std::chrono::steady_clock::now();
                 }
             }
             this->cpuTickCallback();
-            if constexpr (EnableClockTimingSampling) {
+            if constexpr (NesPerformanceConfig::EnableClockTimingSampling) {
                 if (sample) {
                 this->timingStats.cpuNanoseconds += static_cast<quint64>(
                     std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -50,14 +48,14 @@ void NesClock::tick() {
         ++this->ppuCallbackCount;
         bool sample = false;
         std::chrono::steady_clock::time_point start;
-        if constexpr (EnableClockTimingSampling) {
+        if constexpr (NesPerformanceConfig::EnableClockTimingSampling) {
             sample = (this->ppuCallbackCount & 0xFF) == 0;
             if (sample) {
                 start = std::chrono::steady_clock::now();
             }
         }
         this->ppuTickCallback();
-        if constexpr (EnableClockTimingSampling) {
+        if constexpr (NesPerformanceConfig::EnableClockTimingSampling) {
             if (sample) {
                 this->timingStats.ppuNanoseconds += static_cast<quint64>(
                     std::chrono::duration_cast<std::chrono::nanoseconds>(

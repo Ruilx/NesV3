@@ -8,7 +8,6 @@
 
 #include <QGraphicsRectItem>
 #include <QPen>
-#include <QElapsedTimer>
 
 #include <cmath>
 
@@ -101,8 +100,6 @@ void NesScene::updateTile(
 }
 
 void NesScene::updateFromPpu(Ppu &ppu) {
-    QElapsedTimer elapsedTimer;
-    elapsedTimer.start();
     if (this->backdropItem != nullptr) {
         this->backdropItem->setBrush(
             this->nesPalette.colorAt(ppu.universalBackgroundColor()));
@@ -163,16 +160,12 @@ void NesScene::updateFromPpu(Ppu &ppu) {
                 }
             }
         }
-        this->updateStats.elapsedNanoseconds += static_cast<quint64>(
-            elapsedTimer.nsecsElapsed());
         return;
     }
 
     for (const Ppu::DirtyTile &tile : dirtyTiles) {
         updateOneTile(tile.nametable, tile.tileX, tile.tileY);
     }
-    this->updateStats.elapsedNanoseconds += static_cast<quint64>(
-        elapsedTimer.nsecsElapsed());
 }
 
 NesScene::UpdateStats NesScene::takeUpdateStats() {

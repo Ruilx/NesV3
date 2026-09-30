@@ -1,6 +1,7 @@
 #include "NesView.h"
 
 #include "NesScene.h"
+#include "NesPerformanceConfig.h"
 
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -29,11 +30,15 @@ NesView::NesView(QWidget *parent) : QGraphicsView(parent) {
 }
 
 void NesView::paintEvent(QPaintEvent *event) {
-    QElapsedTimer timer;
-    timer.start();
-    QGraphicsView::paintEvent(event);
     ++this->paintStats.calls;
-    this->paintStats.nanoseconds += static_cast<quint64>(timer.nsecsElapsed());
+    if constexpr (NesPerformanceConfig::EnableViewPaintTiming) {
+        QElapsedTimer timer;
+        timer.start();
+        QGraphicsView::paintEvent(event);
+        this->paintStats.nanoseconds += static_cast<quint64>(timer.nsecsElapsed());
+    } else {
+        QGraphicsView::paintEvent(event);
+    }
 }
 
 NesView::PaintStats NesView::takePaintStats() {

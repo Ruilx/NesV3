@@ -20,6 +20,7 @@ add_library(Nes STATIC
     Nes.h
     NesClock.cpp
     NesClock.h
+    ../NesPerformanceConfig.h
     Ppu.cpp
     Ppu.h
     Mapper/Mapper.cpp

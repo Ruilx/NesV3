@@ -167,6 +167,23 @@ void MainWindow::closePerformanceLog() {
     this->performanceLogFile.close();
 }
 
+void MainWindow::resetPerformanceWindow() {
+    this->performanceTimer.restart();
+    this->performanceFrameCount = 0;
+    this->performanceCoreNanoseconds = 0;
+    this->performanceSceneNanoseconds = 0;
+    this->performanceDirtyTiles = 0;
+    this->performanceDecodedTiles = 0;
+    this->performanceUpdatedTiles = 0;
+    this->performanceNametableSetPos = 0;
+    NesTileItem::resetPaintStats();
+    NesNametableItem::resetPositionStats();
+    (void)this->nes.clock().takeTimingStats();
+    (void)this->nes.cpu().bus().takeStats();
+    (void)this->nes.apu().takeStats();
+    (void)this->view->takePaintStats();
+}
+
 void MainWindow::savePalette() {
     QSettings settings;
     settings.beginGroup("Palette");
@@ -225,6 +242,7 @@ void MainWindow::openRom() {
     this->scene->updateFromPpu(this->nes.ppu());
     this->currentRomPath = path;
     openPerformanceLog(path);
+    resetPerformanceWindow();
     this->simulationTimer.start();
     updateWindowTitle();
     if (auto *view = qobject_cast<NesView *>(this->centralWidget())) {
@@ -252,15 +270,13 @@ void MainWindow::runSimulationFrame() {
         return;
     }
 
-    QElapsedTimer coreTimer;
-    coreTimer.start();
+    this->frameTimer.start();
     this->nes.runFrame();
-    const quint64 coreNanoseconds = static_cast<quint64>(coreTimer.nsecsElapsed());
+    const quint64 coreNanoseconds = static_cast<quint64>(this->frameTimer.nsecsElapsed());
 
-    QElapsedTimer sceneTimer;
-    sceneTimer.start();
+    this->frameTimer.start();
     this->scene->updateFromPpu(this->nes.ppu());
-    const quint64 sceneNanoseconds = static_cast<quint64>(sceneTimer.nsecsElapsed());
+    const quint64 sceneNanoseconds = static_cast<quint64>(this->frameTimer.nsecsElapsed());
     const NesScene::UpdateStats sceneStats = this->scene->takeUpdateStats();
 
     ++this->performanceFrameCount;
@@ -277,12 +293,6 @@ void MainWindow::runSimulationFrame() {
     }
 
     const double seconds = elapsedMilliseconds / 1000.0;
-    const Ppu::WriteStats ppuWriteStats = this->nes.ppu().takeWriteStats();
-    const Controller::ReadStats controllerStats =
-        this->nes.controller().takeReadStats();
-    const Cpu::ExecutionStats cpuStats = this->nes.cpu().takeExecutionStats();
-    Cpu::CpuReg cpuRegisters;
-    this->nes.cpu().getContent(cpuRegisters);
     const double simulationFps = this->performanceFrameCount / seconds;
     const double averageCoreMs = this->performanceCoreNanoseconds
         / static_cast<double>(this->performanceFrameCount) / 1000000.0;
@@ -290,7 +300,6 @@ void MainWindow::runSimulationFrame() {
         / static_cast<double>(this->performanceFrameCount) / 1000000.0;
     const NesTileItem::PaintStats tileStats = NesTileItem::paintStats();
     const double paintMs = tileStats.paintNanoseconds / 1000000.0;
-    const double imageRebuildMs = tileStats.imageRebuildNanoseconds / 1000000.0;
     const NesClock::TimingStats clockStats = this->nes.clock().takeTimingStats();
     const double clockCpuMs = clockStats.cpuNanoseconds / 1000000.0;
     const double clockPpuMs = clockStats.ppuNanoseconds / 1000000.0;
@@ -301,99 +310,39 @@ void MainWindow::runSimulationFrame() {
     const NesNametableItem::PositionStats positionStats =
         NesNametableItem::positionStats();
     const QString message = QStringLiteral(
-        "FPS %1 | core %2 ms clockCpu %3 ms clockPpu %4 ms samples %5/%6 | scene %7 ms | dirty %8 decoded %9 updated %10 | parentSetPos %11 tileSetPos %12 zeroDelta %13 smallDelta %14 checks %15 | paint %16 calls %17 ms rebuild %18 calls %19 ms | PC %20:%21 now %22 SP %23 int %24 NMI %25 RTI %26 | maskWrites %27 lastMask $%28 DMA %29 spriteOut %30 spriteFail %31 | PPU $2000 %32 $2001 %33 $2002 %34 | buttons $%35 seen $%36")
+        "fps=%1 core=%2ms scene=%3ms view=%4/%5ms tile=%6/%7ms "
+        "rebuild=%8 dirty=%9 decoded=%10 updated=%11 "
+        "pos=%12/%13 checks=%14 clock=%15/%16ms samples=%17/%18 "
+        "bus=%19/%20 miss=%21 apu=%22")
         .arg(simulationFps, 0, 'f', 1)
         .arg(averageCoreMs, 0, 'f', 3)
-        .arg(clockCpuMs, 0, 'f', 3)
-        .arg(clockPpuMs, 0, 'f', 3)
-        .arg(clockStats.cpuSamples)
-        .arg(clockStats.ppuSamples)
         .arg(averageSceneMs, 0, 'f', 3)
+        .arg(viewPaintStats.calls)
+        .arg(viewPaintMs, 0, 'f', 3)
+        .arg(tileStats.paintCalls)
+        .arg(paintMs, 0, 'f', 3)
+        .arg(tileStats.imageRebuilds)
         .arg(this->performanceDirtyTiles)
         .arg(this->performanceDecodedTiles)
         .arg(this->performanceUpdatedTiles)
         .arg(this->performanceNametableSetPos)
         .arg(positionStats.tileSetPosCalls)
-        .arg(positionStats.zeroDeltaPositionChecks)
-        .arg(positionStats.smallDeltaPositionChecks)
         .arg(positionStats.rasterPositionChecks)
-        .arg(tileStats.paintCalls)
-        .arg(paintMs, 0, 'f', 3)
-        .arg(tileStats.imageRebuilds)
-        .arg(imageRebuildMs, 0, 'f', 3)
-        .arg(QString::number(cpuStats.lastPc, 16).rightJustified(4, QLatin1Char('0')))
-        .arg(QString::number(cpuStats.lastOpcode, 16).rightJustified(2, QLatin1Char('0')))
-        .arg(QString::number(cpuRegisters.pc, 16).rightJustified(4, QLatin1Char('0')))
-        .arg(QString::number(cpuRegisters.s, 16).rightJustified(2, QLatin1Char('0')))
-        .arg(static_cast<int>(cpuRegisters.intPending))
-        .arg(cpuStats.nmiEntries)
-        .arg(cpuStats.rtiEntries)
-        .arg(ppuWriteStats.maskWrites)
-        .arg(ppuWriteStats.lastMaskValue, 2, 16, QLatin1Char('0'))
-        .arg(ppuWriteStats.oamDmaTransfers)
-        .arg(ppuWriteStats.spriteOutputs)
-        .arg(ppuWriteStats.spriteRenderFailures)
-        .arg(this->nes.ppu().controlRegister(), 2, 16, QLatin1Char('0'))
-        .arg(this->nes.ppu().maskRegister(), 2, 16, QLatin1Char('0'))
-        .arg(this->nes.ppu().statusRegister(), 2, 16, QLatin1Char('0'))
-        .arg(QString::number(controllerStats.currentButtons, 16)
-             .rightJustified(2, QLatin1Char('0')))
-        .arg(QString::number(controllerStats.lastNonZeroLatchedButtons, 16)
-             .rightJustified(2, QLatin1Char('0')));
-    this->statusBar()->showMessage(message);
-    qInfo().noquote() << message;
-    if (this->performanceLogFile.isOpen()) {
-        this->performanceLogStream << message << '\n';
-        this->performanceLogStream.flush();
-    }
-    const QString diagnostics = QStringLiteral(
-        "Diagnostics clockCpuMs %1 clockPpuMs %2 clockSamples %3/%4 "
-        "busReadWrite %5/%6 busCacheHit %7/%8 busCacheMiss %9/%10 "
-        "busScanEntries %11 apuClock %12 apuReadWrite %13/%14 apuIrqChanges %15 "
-        "viewPaint %16 calls %17 ms")
         .arg(clockCpuMs, 0, 'f', 3)
         .arg(clockPpuMs, 0, 'f', 3)
         .arg(clockStats.cpuSamples)
         .arg(clockStats.ppuSamples)
         .arg(busStats.reads)
         .arg(busStats.writes)
-        .arg(busStats.readCacheHits)
-        .arg(busStats.writeCacheHits)
-        .arg(busStats.readCacheMisses)
-        .arg(busStats.writeCacheMisses)
-        .arg(busStats.mappingScanEntries)
-        .arg(apuStats.clockCalls)
-        .arg(apuStats.reads)
-        .arg(apuStats.writes)
-        .arg(apuStats.irqLineChanges)
-        .arg(viewPaintStats.calls)
-        .arg(viewPaintMs, 0, 'f', 3);
-    qInfo().noquote() << diagnostics;
+        .arg(busStats.readCacheMisses + busStats.writeCacheMisses)
+        .arg(apuStats.clockCalls);
+    this->statusBar()->showMessage(message);
+    qInfo().noquote() << message;
     if (this->performanceLogFile.isOpen()) {
-        this->performanceLogStream << diagnostics << '\n';
+        this->performanceLogStream << message << '\n';
         this->performanceLogStream.flush();
     }
-    if (Mapper001 *mapper = this->nes.cartridge().mapper001()) {
-        const Mapper001::Stats mapperStats = mapper->takeStats();
-        qInfo().noquote()
-            << QStringLiteral("MMC1 serialWrites=%1 chrBankCommits=%2 "
-                              "effectiveChrChanges=%3 resetWrites=%4")
-                .arg(mapperStats.serialWrites)
-                .arg(mapperStats.chrBankCommits)
-                .arg(mapperStats.effectiveChrChanges)
-                .arg(mapperStats.resetWrites);
-    }
-
-    this->performanceTimer.restart();
-    this->performanceFrameCount = 0;
-    this->performanceCoreNanoseconds = 0;
-    this->performanceSceneNanoseconds = 0;
-    this->performanceDirtyTiles = 0;
-    this->performanceDecodedTiles = 0;
-    this->performanceUpdatedTiles = 0;
-    this->performanceNametableSetPos = 0;
-    NesTileItem::resetPaintStats();
-    NesNametableItem::resetPositionStats();
+    this->resetPerformanceWindow();
 }
 
 void MainWindow::updateWindowTitle() {

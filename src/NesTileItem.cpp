@@ -1,12 +1,10 @@
 #include "NesTileItem.h"
 
+#include "NesPerformanceConfig.h"
+
 #include <QElapsedTimer>
 #include <QPainter>
 #include <QStyleOptionGraphicsItem>
-
-namespace {
-constexpr bool EnableTileTimingSampling = true;
-}
 
 NesTileItem::PaintStats NesTileItem::statistics;
 
@@ -21,20 +19,22 @@ QRectF NesTileItem::boundingRect() const {
 }
 
 void NesTileItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *) {
-    QElapsedTimer timer;
-    if constexpr (EnableTileTimingSampling) {
-        timer.start();
-    }
+    const auto drawTile = [this, painter]() {
+        painter->drawImage(QPointF(0, 0), this->image);
+        if (this->gridVisible) {
+            painter->setPen(QPen(QColor(255, 255, 255, 80), 0));
+            painter->drawRect(boundingRect());
+        }
+    };
     ++NesTileItem::statistics.paintCalls;
-    painter->drawImage(QPointF(0, 0), this->image);
-
-    if (this->gridVisible) {
-        painter->setPen(QPen(QColor(255, 255, 255, 80), 0));
-        painter->drawRect(boundingRect());
-    }
-    if constexpr (EnableTileTimingSampling) {
+    if constexpr (NesPerformanceConfig::EnableTilePaintTiming) {
+        QElapsedTimer timer;
+        timer.start();
+        drawTile();
         NesTileItem::statistics.paintNanoseconds +=
             static_cast<quint64>(timer.nsecsElapsed());
+    } else {
+        drawTile();
     }
 }
 
@@ -96,24 +96,33 @@ void NesTileItem::setGridVisible(bool visible) {
 }
 
 void NesTileItem::rebuildImage() {
-    QElapsedTimer timer;
-    timer.start();
-    ++NesTileItem::statistics.imageRebuilds;
-    for (int y = 0; y < TileSize; ++y) {
-        for (int x = 0; x < TileSize; ++x) {
-            const int pixelIndex = y * TileSize + x;
-            if (this->pixels.value(pixelIndex, 0) == 0) {
-                this->image.setPixelColor(x, y, Qt::transparent);
-            } else {
-                this->image.setPixelColor(
-                        x,
-                        y,
-                        this->palette.value(this->colorIndices.value(pixelIndex, 0), Qt::black));
+    const auto rebuild = [this]() {
+        ++NesTileItem::statistics.imageRebuilds;
+        for (int y = 0; y < TileSize; ++y) {
+            for (int x = 0; x < TileSize; ++x) {
+                const int pixelIndex = y * TileSize + x;
+                if (this->pixels.value(pixelIndex, 0) == 0) {
+                    this->image.setPixelColor(x, y, Qt::transparent);
+                } else {
+                    this->image.setPixelColor(
+                            x,
+                            y,
+                            this->palette.value(
+                                this->colorIndices.value(pixelIndex, 0),
+                                Qt::black));
+                }
             }
         }
+    };
+    if constexpr (NesPerformanceConfig::EnableTileImageRebuildTiming) {
+        QElapsedTimer timer;
+        timer.start();
+        rebuild();
+        NesTileItem::statistics.imageRebuildNanoseconds +=
+            static_cast<quint64>(timer.nsecsElapsed());
+    } else {
+        rebuild();
     }
-    NesTileItem::statistics.imageRebuildNanoseconds +=
-        static_cast<quint64>(timer.nsecsElapsed());
 }
 
 void NesTileItem::resetPaintStats() {

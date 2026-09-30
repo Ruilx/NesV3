@@ -29,6 +29,7 @@ private:
 	void closeRom();
 	void openPerformanceLog(const QString &romPath);
 	void closePerformanceLog();
+	void resetPerformanceWindow();
 	void runSimulationFrame();
 	void updateWindowTitle();
 	void setDebugInputMode(bool enabled);
@@ -38,6 +39,7 @@ private:
 	NesView *view = nullptr;
 	QTimer simulationTimer;
 	QElapsedTimer performanceTimer;
+	QElapsedTimer frameTimer;
 	QFile performanceLogFile;
 	QTextStream performanceLogStream;
 	quint64 performanceFrameCount = 0;
