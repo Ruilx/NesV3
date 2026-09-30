@@ -6,6 +6,7 @@ add_library(Nes STATIC
     Bus.h
     Apu.cpp
     Apu.h
+    Diagnostics.h
     Cartridge.cpp
     Cartridge.h
     Controller.cpp

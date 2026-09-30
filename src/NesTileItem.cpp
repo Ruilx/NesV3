@@ -1,12 +1,10 @@
 #include "NesTileItem.h"
 
+#include "Nes/Diagnostics.h"
+
 #include <QElapsedTimer>
 #include <QPainter>
 #include <QStyleOptionGraphicsItem>
-
-namespace {
-constexpr bool EnableTileTimingSampling = true;
-}
 
 NesTileItem::PaintStats NesTileItem::statistics;
 
@@ -22,7 +20,7 @@ QRectF NesTileItem::boundingRect() const {
 
 void NesTileItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *) {
     QElapsedTimer timer;
-    if constexpr (EnableTileTimingSampling) {
+    if constexpr (NesDiagnostics::EnableTileTiming) {
         timer.start();
     }
     ++NesTileItem::statistics.paintCalls;
@@ -32,7 +30,7 @@ void NesTileItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWi
         painter->setPen(QPen(QColor(255, 255, 255, 80), 0));
         painter->drawRect(boundingRect());
     }
-    if constexpr (EnableTileTimingSampling) {
+    if constexpr (NesDiagnostics::EnableTileTiming) {
         NesTileItem::statistics.paintNanoseconds +=
             static_cast<quint64>(timer.nsecsElapsed());
     }

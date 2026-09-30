@@ -1,5 +1,6 @@
 #include "Bus.h"
 
+#include "Diagnostics.h"
 #include "Ram.h"
 
 Bus::Bus(quint32 addressSpaceSize)
@@ -54,7 +55,9 @@ bool Bus::setMappingFlags(MappingId id, AccessFlags flags) {
 }
 
 Bus::AccessResult Bus::read(quint16 address, quint8 &value) {
-    ++this->statistics.reads;
+    if constexpr (NesDiagnostics::EnableBusStats) {
+        ++this->statistics.reads;
+    }
     const RegisteredMapping *registered = findMapping(address, AccessFlags::Readable);
     if (registered == nullptr) {
         value = this->openBus;
@@ -77,7 +80,9 @@ Bus::AccessResult Bus::read(quint16 address, quint8 &value) {
 }
 
 Bus::AccessResult Bus::write(quint16 address, quint8 value) {
-    ++this->statistics.writes;
+    if constexpr (NesDiagnostics::EnableBusStats) {
+        ++this->statistics.writes;
+    }
     const RegisteredMapping *registered = findMapping(address, AccessFlags::Writable);
     if (registered == nullptr) {
         this->openBus = value;
@@ -122,25 +127,31 @@ const Bus::RegisteredMapping *Bus::findMapping(
         const RegisteredMapping &cached = this->mappings[cachedIndex];
         if (address >= cached.mapping.start && address <= cached.mapping.end) {
             if (hasAccessFlag(cached.mapping.flags, requiredAccess)) {
-                if (requiredAccess == AccessFlags::Readable) {
-                    ++this->statistics.readCacheHits;
-                } else {
-                    ++this->statistics.writeCacheHits;
+                if constexpr (NesDiagnostics::EnableBusStats) {
+                    if (requiredAccess == AccessFlags::Readable) {
+                        ++this->statistics.readCacheHits;
+                    } else {
+                        ++this->statistics.writeCacheHits;
+                    }
                 }
                 return &cached;
             }
         }
     }
 
-    if (requiredAccess == AccessFlags::Readable) {
-        ++this->statistics.readCacheMisses;
-    } else {
-        ++this->statistics.writeCacheMisses;
+    if constexpr (NesDiagnostics::EnableBusStats) {
+        if (requiredAccess == AccessFlags::Readable) {
+            ++this->statistics.readCacheMisses;
+        } else {
+            ++this->statistics.writeCacheMisses;
+        }
     }
 
     const RegisteredMapping *best = nullptr;
     for (qsizetype index = 0; index < this->mappings.size(); ++index) {
-        ++this->statistics.mappingScanEntries;
+        if constexpr (NesDiagnostics::EnableBusStats) {
+            ++this->statistics.mappingScanEntries;
+        }
         const RegisteredMapping &registered = this->mappings[index];
         const Mapping &mapping = registered.mapping;
         if (address < mapping.start || address > mapping.end) {

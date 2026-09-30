@@ -1,11 +1,15 @@
 #include "Apu.h"
 
+#include "Diagnostics.h"
+
 Apu::Apu() {
     this->reset();
 }
 
 bool Apu::read(quint16 address, quint8 &value) {
-    ++this->statistics.reads;
+    if constexpr (NesDiagnostics::EnableApuStats) {
+        ++this->statistics.reads;
+    }
     if (address == 0x15) {
         value = static_cast<quint8>(this->channelEnable & 0x1F);
         if (this->frameIrq) {
@@ -23,7 +27,9 @@ bool Apu::read(quint16 address, quint8 &value) {
 }
 
 bool Apu::write(quint16 address, quint8 value) {
-    ++this->statistics.writes;
+    if constexpr (NesDiagnostics::EnableApuStats) {
+        ++this->statistics.writes;
+    }
     if (address <= 0x13) {
         this->registers[address] = value;
         return true;
@@ -44,7 +50,9 @@ bool Apu::write(quint16 address, quint8 value) {
 }
 
 void Apu::clock() {
-    ++this->statistics.clockCalls;
+    if constexpr (NesDiagnostics::EnableApuStats) {
+        ++this->statistics.clockCalls;
+    }
     ++this->frameCounterCycles;
     if (this->frameCounterCycles < FrameCounterPeriod) {
         return;
@@ -110,7 +118,9 @@ void Apu::updateIrqLine() {
     const bool pending = this->frameIrq || this->dpcmIrq;
     if (pending != this->irqLinePending) {
         this->irqLinePending = pending;
-        ++this->statistics.irqLineChanges;
+        if constexpr (NesDiagnostics::EnableApuStats) {
+            ++this->statistics.irqLineChanges;
+        }
     }
     if (this->irqCallback) {
         this->irqCallback(pending);
