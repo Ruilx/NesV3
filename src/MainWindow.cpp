@@ -10,6 +10,7 @@
 #include "PatternTableDialog.h"
 
 #include <QAction>
+#include <QCoreApplication>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QDir>
@@ -125,7 +126,10 @@ MainWindow::~MainWindow() {
     closePerformanceLog();
 }
 
-void MainWindow::openPerformanceLog(const QString &romPath) {
+void MainWindow::openPerformanceLog(
+    const QString &romPath,
+    const QString &testTarget,
+    int testDurationMilliseconds) {
     closePerformanceLog();
 
     const QString logDirectory = QStandardPaths::writableLocation(
@@ -137,10 +141,11 @@ void MainWindow::openPerformanceLog(const QString &romPath) {
 
     const QString romName = QFileInfo(romPath).completeBaseName();
     const QString timestamp = QDateTime::currentDateTime().toString(
-        QStringLiteral("yyyyMMdd-HHmmss"));
+        QStringLiteral("yyyyMMdd-HHmmss-zzz"));
     this->performanceLogFile.setFileName(
         QDir(logDirectory).filePath(
-            QStringLiteral("performance-%1-%2.log").arg(romName, timestamp)));
+            QStringLiteral("performance-%1-%2-%3.log")
+                .arg(romName, testTarget, timestamp)));
     if (!this->performanceLogFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
         qWarning() << "Unable to open performance log:"
                    << this->performanceLogFile.fileName()
@@ -150,8 +155,10 @@ void MainWindow::openPerformanceLog(const QString &romPath) {
 
     this->performanceLogStream.setDevice(&this->performanceLogFile);
     this->performanceLogStream
-        << "ROM=" << romPath
+        << "target=" << testTarget
+        << " rom=" << romPath
         << " mapper=" << this->nes.cartridge().header().mapperNumber
+        << " durationMs=" << testDurationMilliseconds
         << "\n";
     this->performanceLogStream.flush();
     qInfo() << "Performance log:" << this->performanceLogFile.fileName();
@@ -203,9 +210,27 @@ void MainWindow::openRom() {
     }
 
     QString error;
-    if (!this->nes.cartridge().loadFromFile(path, error)) {
+    if (!loadRomFromPath(path, &error)) {
         QMessageBox::critical(this, tr("Open ROM failed"), error);
-        return;
+    }
+}
+
+bool MainWindow::loadRomFromPath(
+    const QString &path,
+    QString *errorMessage,
+    const QString &testTarget,
+    int testDurationMilliseconds) {
+    if (path.isEmpty()) {
+        return false;
+    }
+
+    QString error;
+    if (!this->nes.cartridge().loadFromFile(path, error)) {
+        if (errorMessage != nullptr) {
+            *errorMessage = error;
+        }
+        qWarning() << "Unable to load ROM:" << path << error;
+        return false;
     }
 
     qInfo() << QString("Loaded ROM: %1, mapper %2").arg(QFileInfo(path).fileName()).arg(this->nes.cartridge().header().mapperNumber);
@@ -224,13 +249,64 @@ void MainWindow::openRom() {
     this->scene->invalidateTileCache();
     this->scene->updateFromPpu(this->nes.ppu());
     this->currentRomPath = path;
-    openPerformanceLog(path);
+    this->currentTestTarget = testTarget;
+    openPerformanceLog(path, testTarget, testDurationMilliseconds);
     this->simulationTimer.start();
     updateWindowTitle();
     if (auto *view = qobject_cast<NesView *>(this->centralWidget())) {
         view->setFocus(Qt::OtherFocusReason);
         qInfo() << "NesView focus restored after ROM load:" << view->hasFocus();
     }
+    return true;
+}
+
+bool MainWindow::startBenchmark(
+    const QStringList &romPaths, const QVector<int> &durationsMilliseconds) {
+    if (romPaths.size() != 2 || durationsMilliseconds.size() != 2
+        || durationsMilliseconds[0] <= 0 || durationsMilliseconds[1] <= 0) {
+        return false;
+    }
+
+    this->benchmarkRomPaths = romPaths;
+    this->benchmarkTargets = {QStringLiteral("SMB-demo"), QStringLiteral("BattleCity-title")};
+    this->benchmarkDurationsMilliseconds = durationsMilliseconds;
+    this->benchmarkRomIndex = 0;
+    QTimer::singleShot(0, this, &MainWindow::runNextBenchmarkRom);
+    return true;
+}
+
+void MainWindow::runNextBenchmarkRom() {
+    if (this->benchmarkRomIndex >= this->benchmarkRomPaths.size()) {
+        closeRom();
+        qInfo() << "Benchmark completed";
+        QCoreApplication::exit(0);
+        return;
+    }
+
+    const int index = this->benchmarkRomIndex;
+    const QString path = this->benchmarkRomPaths.at(index);
+    const QString target = this->benchmarkTargets.at(index);
+    const int durationMilliseconds = this->benchmarkDurationsMilliseconds.at(index);
+    if (!loadRomFromPath(path, nullptr, target, durationMilliseconds)) {
+        closeRom();
+        qWarning() << "Benchmark failed while loading ROM:" << path;
+        QCoreApplication::exit(2);
+        return;
+    }
+
+    ++this->benchmarkRomIndex;
+    this->benchmarkRomTimer.restart();
+    qInfo() << "Benchmark started:" << target
+            << "durationMs=" << durationMilliseconds;
+    QTimer::singleShot(durationMilliseconds, this, [this]() {
+        const QString finishedPath = this->currentRomPath;
+        const QString finishedTarget = this->currentTestTarget;
+        const qint64 elapsedMilliseconds = this->benchmarkRomTimer.elapsed();
+        closeRom();
+        qInfo() << "Benchmark finished:" << finishedTarget
+                << finishedPath << "elapsedMs=" << elapsedMilliseconds;
+        QTimer::singleShot(0, this, &MainWindow::runNextBenchmarkRom);
+    });
 }
 
 void MainWindow::closeRom() {
@@ -244,6 +320,7 @@ void MainWindow::closeRom() {
     this->nes.clock().reset();
     this->scene->invalidateTileCache();
     this->currentRomPath.clear();
+    this->currentTestTarget.clear();
     updateWindowTitle();
 }
 
@@ -301,7 +378,10 @@ void MainWindow::runSimulationFrame() {
     const NesNametableItem::PositionStats positionStats =
         NesNametableItem::positionStats();
     const QString message = QStringLiteral(
-        "FPS %1 | core %2 ms clockCpu %3 ms clockPpu %4 ms samples %5/%6 | scene %7 ms | dirty %8 decoded %9 updated %10 | parentSetPos %11 tileSetPos %12 zeroDelta %13 smallDelta %14 checks %15 | paint %16 calls %17 ms rebuild %18 calls %19 ms | PC %20:%21 now %22 SP %23 int %24 NMI %25 RTI %26 | maskWrites %27 lastMask $%28 DMA %29 spriteOut %30 spriteFail %31 | PPU $2000 %32 $2001 %33 $2002 %34 | buttons $%35 seen $%36")
+        "F fps=%1 core=%2 clk=%3/%4 smp=%5/%6 scn=%7 dirty=%8/%9/%10 "
+        "pos=%11/%12/%13/%14/%15 pnt=%16/%17 reb=%18/%19 "
+        "cpu=%20/%21/%22/%23/%24/%25/%26 ppu=%27/%28/%29/%30/%31/%32/%33/%34 "
+        "btn=%35/%36")
         .arg(simulationFps, 0, 'f', 1)
         .arg(averageCoreMs, 0, 'f', 3)
         .arg(clockCpuMs, 0, 'f', 3)
@@ -347,10 +427,8 @@ void MainWindow::runSimulationFrame() {
         this->performanceLogStream.flush();
     }
     const QString diagnostics = QStringLiteral(
-        "Diagnostics clockCpuMs %1 clockPpuMs %2 clockSamples %3/%4 "
-        "busReadWrite %5/%6 busCacheHit %7/%8 busCacheMiss %9/%10 "
-        "busScanEntries %11 apuClock %12 apuReadWrite %13/%14 apuIrqChanges %15 "
-        "viewPaint %16 calls %17 ms")
+        "D clk=%1/%2 smp=%3/%4 bus=%5/%6 hit=%7/%8 miss=%9/%10 scan=%11 "
+        "apu=%12/%13/%14/%15 view=%16/%17")
         .arg(clockCpuMs, 0, 'f', 3)
         .arg(clockPpuMs, 0, 'f', 3)
         .arg(clockStats.cpuSamples)
