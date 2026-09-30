@@ -34,6 +34,7 @@ public:
     [[nodiscard]] quint8 enabledMask() const;
     [[nodiscard]] quint8 activeMask() const;
     [[nodiscard]] quint8 registeredMask() const;
+    [[nodiscard]] float sample(quint8 statusMask) const;
 
     void clockCpuCycle();
     void dispatchQuarterFrame();

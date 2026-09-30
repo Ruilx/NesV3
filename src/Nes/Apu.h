@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Bus.h"
+#include "ApuMixer.h"
 #include "ApuChannelRegistry.h"
 #include "Channels/DpcmChannel.h"
 
@@ -46,6 +47,7 @@ public:
         const ApuChannelRegistry::ChannelDescriptor &descriptor);
     bool unregisterChannel(ApuChannelRegistry::ChannelHandle handle);
     [[nodiscard]] Status status() const;
+    [[nodiscard]] float sample() const;
     [[nodiscard]] quint8 registerValue(quint8 index) const;
     [[nodiscard]] Stats takeStats();
 

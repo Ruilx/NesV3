@@ -9,6 +9,8 @@ add_library(Nes STATIC
     ApuChannel.h
     ApuChannelRegistry.cpp
     ApuChannelRegistry.h
+    ApuMixer.cpp
+    ApuMixer.h
     Channels/DpcmChannel.cpp
     Channels/DpcmChannel.h
     Channels/PulseChannel.cpp

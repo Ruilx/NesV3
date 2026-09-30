@@ -181,6 +181,15 @@ Apu::Status Apu::status() const {
     };
 }
 
+float Apu::sample() const {
+    return ApuMixer::mix(
+        this->channelRegistry.sample(0x01),
+        this->channelRegistry.sample(0x02),
+        this->channelRegistry.sample(0x04),
+        this->channelRegistry.sample(0x08),
+        this->dpcmChannel.sample());
+}
+
 quint8 Apu::registerValue(quint8 index) const {
     return index < 0x16 ? this->registers[index] : 0;
 }

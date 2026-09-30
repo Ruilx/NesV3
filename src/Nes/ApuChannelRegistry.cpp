@@ -74,6 +74,16 @@ quint8 ApuChannelRegistry::registeredMask() const {
     return mask;
 }
 
+float ApuChannelRegistry::sample(quint8 statusMask) const {
+    float result = 0.0F;
+    for (const Entry &entry : this->entries) {
+        if ((entry.descriptor.statusMask & statusMask) != 0) {
+            result += entry.channel->sample();
+        }
+    }
+    return result;
+}
+
 void ApuChannelRegistry::clockCpuCycle() {
     for (Entry &entry : this->entries) {
         entry.channel->clockCpuCycle();

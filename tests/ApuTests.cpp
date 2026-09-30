@@ -3,6 +3,7 @@
 #include "Channels/NoiseChannel.h"
 #include "Channels/PulseChannel.h"
 #include "Channels/TriangleChannel.h"
+#include "ApuMixer.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -445,6 +446,33 @@ void testApuBuiltInDpcmChannel() {
     check(!apu.status().dpcmIrq && !irqPending,
         "APU status write should clear DPCM IRQ");
 }
+
+void testApuMixer() {
+    check(ApuMixer::mix(0.0F, 0.0F, 0.0F, 0.0F, 0.0F) == 0.0F,
+        "mixer should be silent when all channels are silent");
+    const float pulseOnly = ApuMixer::mix(1.0F, 0.0F, 0.0F, 0.0F, 0.0F);
+    const float pulsePair = ApuMixer::mix(1.0F, 1.0F, 0.0F, 0.0F, 0.0F);
+    const float tndOnly = ApuMixer::mix(0.0F, 0.0F, 1.0F, 1.0F, 1.0F);
+    check(pulseOnly > 0.0F && pulsePair > pulseOnly,
+        "mixer should produce and combine pulse output");
+    check(tndOnly > 0.0F && tndOnly < 1.0F,
+        "mixer should produce normalized TND output");
+    check(ApuMixer::mix(2.0F, -1.0F, 0.0F, 0.0F, 0.0F) == pulseOnly,
+        "mixer should clamp normalized pulse inputs");
+}
+
+void testApuMixedSample() {
+    Apu apu;
+    apu.write(0x00, 0x9F);
+    apu.write(0x02, 0x08);
+    apu.write(0x15, 0x01);
+    apu.write(0x03, 0x08);
+    check(apu.sample() == 0.0F,
+        "APU mixer should follow the currently silent pulse phase");
+    apu.clock();
+    check(apu.sample() > 0.0F,
+        "APU mixer should expose an active pulse sample");
+}
 }
 
 int main() {
@@ -461,6 +489,8 @@ int main() {
     testApuBuiltInNoiseChannel();
     testDpcmChannel();
     testApuBuiltInDpcmChannel();
+    testApuMixer();
+    testApuMixedSample();
     std::cout << "ApuTests passed\n";
     return EXIT_SUCCESS;
 }
