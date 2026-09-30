@@ -25,12 +25,14 @@ bool Apu::read(quint16 address, quint8 &value) {
 bool Apu::write(quint16 address, quint8 value) {
     ++this->statistics.writes;
     if (address <= 0x13) {
+        this->channelRegistry.writeRegister(address, value);
         this->registers[address] = value;
         return true;
     }
     if (address == 0x15) {
         this->registers[address] = value;
         this->channelEnable = static_cast<quint8>(value & 0x1F);
+        this->channelRegistry.setEnabledMask(this->channelEnable);
         this->dpcmIrq = false;
         this->updateIrqLine();
         return true;
@@ -45,6 +47,7 @@ bool Apu::write(quint16 address, quint8 value) {
 
 void Apu::clock() {
     ++this->statistics.clockCalls;
+    this->channelRegistry.clockCpuCycle();
     ++this->frameCounterCycles;
     switch (this->frameCounterCycles) {
     case 3729:
@@ -90,6 +93,7 @@ void Apu::reset() {
     this->frameCounterMode5 = false;
     this->frameIrqInhibit = false;
     this->frameCounterCycles = 0;
+    this->channelRegistry.reset();
     this->statistics = Stats();
     this->irqLinePending = false;
     this->updateIrqLine();
@@ -104,9 +108,24 @@ void Apu::setFrameCounterCallback(FrameCounterCallback callback) {
     this->frameCounterCallback = std::move(callback);
 }
 
+ApuChannelRegistry::ChannelHandle Apu::registerChannel(
+    std::unique_ptr<ApuChannel> channel,
+    const ApuChannelRegistry::ChannelDescriptor &descriptor) {
+    const ApuChannelRegistry::ChannelHandle handle =
+        this->channelRegistry.registerChannel(std::move(channel), descriptor);
+    this->channelRegistry.setEnabledMask(this->channelEnable);
+    return handle;
+}
+
+bool Apu::unregisterChannel(ApuChannelRegistry::ChannelHandle handle) {
+    return this->channelRegistry.unregisterChannel(handle);
+}
+
 Apu::Status Apu::status() const {
     return Status{
-        .channelEnable = this->channelEnable,
+        .channelEnable = this->channelRegistry.registeredMask() != 0
+            ? this->channelRegistry.enabledMask()
+            : this->channelEnable,
         .frameIrq = this->frameIrq,
         .dpcmIrq = this->dpcmIrq,
     };
@@ -134,6 +153,11 @@ void Apu::writeFrameCounter(quint8 value) {
 }
 
 void Apu::emitFrameCounterEvent(FrameCounterEvent event) {
+    if (event == FrameCounterEvent::QuarterFrame) {
+        this->channelRegistry.dispatchQuarterFrame();
+    } else if (event == FrameCounterEvent::HalfFrame) {
+        this->channelRegistry.dispatchHalfFrame();
+    }
     if (this->frameCounterCallback) {
         this->frameCounterCallback(event);
     }

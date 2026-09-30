@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Bus.h"
+#include "ApuChannelRegistry.h"
 
 #include <functional>
 
@@ -38,6 +39,10 @@ public:
     void reset();
     void setIrqCallback(IrqCallback callback);
     void setFrameCounterCallback(FrameCounterCallback callback);
+    ApuChannelRegistry::ChannelHandle registerChannel(
+        std::unique_ptr<ApuChannel> channel,
+        const ApuChannelRegistry::ChannelDescriptor &descriptor);
+    bool unregisterChannel(ApuChannelRegistry::ChannelHandle handle);
     [[nodiscard]] Status status() const;
     [[nodiscard]] quint8 registerValue(quint8 index) const;
     [[nodiscard]] Stats takeStats();
@@ -53,6 +58,7 @@ private:
     bool frameCounterMode5 = false;
     bool frameIrqInhibit = false;
     quint64 frameCounterCycles = 0;
+    ApuChannelRegistry channelRegistry;
     IrqCallback irqCallback;
     FrameCounterCallback frameCounterCallback;
     Stats statistics;
